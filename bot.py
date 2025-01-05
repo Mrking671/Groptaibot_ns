@@ -94,9 +94,6 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # Create Application
     app = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add job queue
-    app.job_queue = app.job_queue
 
     # Handlers
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
