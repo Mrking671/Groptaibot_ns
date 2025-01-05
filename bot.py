@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
+import asyncio
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,9 +16,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJI
 # Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
-
-# Initialize scheduler
-scheduler = AsyncIOScheduler()
 
 # Custom greeting based on time of day
 def get_time_based_greeting():
@@ -38,8 +35,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
     message = await update.message.reply_text(welcome_text)
     
-    # Schedule deletion after 30 seconds
-    scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+    # Schedule deletion after 5 minutes
+    context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,15 +97,15 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message = await update.message.reply_text(reply_text)
         
-        # Schedule deletion after 30 seconds
-        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
     else:
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
         ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
         message = await update.message.reply_text(ai_reply_text)
         
-        # Schedule deletion after 30 seconds
-        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,21 +118,22 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = model.generate_content(question)
         message = await update.message.reply_text(response.text)
         
-        # Schedule deletion after 30 seconds
-        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
 
 # Function to delete bot's own messages
-async def delete_bot_message(message):
-    if message.from_user.id == message.bot.id:  # Ensure we only delete bot's messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
+    message = job.context
+    if message.from_user.id == context.bot.id:  # Ensure we only delete bot's messages
         await message.delete()
 
-# Auto-delete feature (after 30 seconds) for bot's own messages
+# Auto-delete feature (after 5 minutes) for bot's own messages
 async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    # Schedule the deletion after 30 seconds
-    scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+    # Schedule the deletion after 5 minutes (300 seconds)
+    context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # Add reactions with multiple emojis on every message
 async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -147,6 +145,11 @@ def main():
     # Create Application
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # APScheduler setup
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(delete_bot_message, 'interval', seconds=30, args=[app.context, None])  # Schedule deletion every 30 seconds
+    scheduler.start()
+
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
@@ -155,18 +158,15 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
-    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 30 seconds
+    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 5 minutes
 
-    # Start scheduler
-    scheduler.start()
-
-    # Run webhook
-    app.run_webhook(
+    # Start the webhook
+    asyncio.get_event_loop().run_until_complete(app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
         port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
         url_path=BOT_TOKEN,  # Bot token as URL path
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",  # Full webhook URL
-    )
+    ))
 
 # Entry point
 if __name__ == "__main__":
