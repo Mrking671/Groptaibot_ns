@@ -124,7 +124,8 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"An error occurred: {e}")
 
 # Function to delete bot's own messages
-async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
     message = job.context
     if message.from_user.id == context.bot.id:  # Ensure we only delete bot's messages
         await message.delete()
