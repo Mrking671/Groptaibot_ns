@@ -147,7 +147,7 @@ def main():
 
     # APScheduler setup
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(delete_bot_message, 'interval', seconds=30, args=[app.context, None])  # Schedule deletion every 30 seconds
+    scheduler.add_job(delete_bot_message, 'interval', seconds=30, args=[None])  # Schedule deletion every 30 seconds
     scheduler.start()
 
     # Handlers
