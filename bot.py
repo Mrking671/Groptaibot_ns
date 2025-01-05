@@ -2,14 +2,7 @@ import os
 import requests
 import google.generativeai as genai
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    JobQueue,
-)
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
 
 # Environment variables
@@ -34,68 +27,68 @@ def get_time_based_greeting():
     else:
         return "Good Night!"
 
-# Function to schedule message deletion
-def schedule_message_deletion(job_queue: JobQueue, chat_id: int, message_id: int):
-    # Schedule the message to be deleted after 60 seconds
-    job_queue.run_once(
-        delete_message, when=60, data={"chat_id": chat_id, "message_id": message_id}
-    )
-
-# Function to delete a specific message
-async def delete_message(context: ContextTypes.DEFAULT_TYPE):
-    job_data = context.job.data
-    chat_id = job_data["chat_id"]
-    message_id = job_data["message_id"]
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception as e:
-        print(f"Failed to delete message {message_id} in chat {chat_id}: {e}")
-
 # Start command: Send a custom start message with the time-based greeting
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
-    sent_message = await update.message.reply_text(welcome_text)
-    # Schedule deletion of the response message
-    schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
+    message = await update.message.reply_text(welcome_text)
+    # Schedule deletion after 5 minutes
+    context.job_queue.run_once(delete_message, 300, data=message.message_id)
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.text:
-        movie_name = update.message.text.strip()
-        url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
-        response = requests.get(url)
-        data = response.json()
+    movie_name = update.message.text.strip()
+    url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
 
-        if data.get("Response") == "True":
-            reply_text = (
-                f"🎬 *Title*: {data.get('Title')}\n"
-                f"📅 *Year*: {data.get('Year')}\n"
-                f"⭐ *IMDb Rating*: {data.get('imdbRating')}\n"
-                f"🎭 *Genre*: {data.get('Genre')}\n"
-                f"🕒 *Runtime*: {data.get('Runtime')}\n"
-                f"🎥 *Director*: {data.get('Director')}\n"
-                f"📝 *Plot*: {data.get('Plot')}\n"
-            )
-            poster_url = data.get("Poster")
-            if poster_url != "N/A":
-                sent_message = await context.bot.send_photo(
-                    chat_id=update.message.chat.id,
-                    photo=poster_url,
-                    caption=reply_text,
-                )
-            else:
-                sent_message = await update.message.reply_text(reply_text)
+    if data.get("Response") == "True":
+        reply_text = (
+            f"🎬 *Title*: {data.get('Title')}\n"
+            f"📅 *Year*: {data.get('Year')}\n"
+            f"⭐ *IMDb Rating*: {data.get('imdbRating')}\n"
+            f"🎭 *Genre*: {data.get('Genre')}\n"
+            f"🕒 *Runtime*: {data.get('Runtime')}\n"
+            f"🎥 *Director*: {data.get('Director')}\n"
+            f"📝 *Plot*: {data.get('Plot')}\n"
+        )
+        poster_url = data.get("Poster")
+        if poster_url != "N/A":
+            message = await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
         else:
-            ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
-            sent_message = await update.message.reply_text(
-                f"IMDb couldn't find this movie, but here's what I found: \n\n{ai_response.text}"
-            )
-        # Schedule deletion of the response message
-        schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
+            message = await update.message.reply_text(reply_text)
     else:
-        sent_message = await update.message.reply_text("Please provide a movie name.")
-        schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
+        ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
+        reply_text = f"> {ai_response.text}"  # Return AI response in quote format
+        message = await update.message.reply_text(reply_text)
+    
+    # Schedule deletion after 5 minutes
+    context.job_queue.run_once(delete_message, 300, data=message.message_id)
+
+# AI response using Gemini API
+async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) == 0:
+        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
+        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+        return
+
+    question = " ".join(context.args)
+    try:
+        response = model.generate_content(question)
+        message = await update.message.reply_text(response.text)
+        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+    except Exception as e:
+        message = await update.message.reply_text(f"An error occurred: {e}")
+        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+
+# Function to delete messages by message ID
+async def delete_message(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        job_data = context.job.data
+        chat_id = context.job.chat_id
+        await context.bot.delete_message(chat_id=chat_id, message_id=job_data)
+    except Exception as e:
+        print(f"Failed to delete message: {e}")
 
 # Main function
 def main():
@@ -104,12 +97,13 @@ def main():
 
     # Handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("ai", ai_response))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
 
     # Run webhook
     app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
-        port=int(os.getenv("PORT", 10000)),  # Ensure PORT is set to 10000 for Render
+        port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
         url_path=BOT_TOKEN,  # Bot token as URL path
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",  # Full webhook URL
     )
