@@ -163,4 +163,5 @@ async def main():
 
 # Entry point
 if __name__ == "__main__":
-    asyncio.run(main())  # Use asyncio.run to start the bot
+    # Let the library manage the event loop
+    main()  # Directly call main instead of asyncio.run(main())
