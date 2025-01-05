@@ -12,15 +12,18 @@ IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")  # Default IMDb API key
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")  # Gemini API key
 
 # Configure Gemini API
-# Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Function to generate AI content using Gemini API
 def generate_ai_content(prompt: str) -> str:
     try:
-        response = genai.generate_text(model="models/text-bison-001", prompt=prompt)
-        return response["candidates"][0]["output"] if response["candidates"] else "No response generated."
+        # Initialize the model using the specified model ID
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # Generate text based on the prompt
+        response = model.generate_text(prompt=prompt)
+        
+        return response['candidates'][0]['output'] if response['candidates'] else "No response generated."
     except Exception as e:
         return f"Error generating AI response: {e}"
 
