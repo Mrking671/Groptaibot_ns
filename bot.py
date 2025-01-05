@@ -4,7 +4,7 @@ import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 
 # Environment variables
@@ -137,7 +137,7 @@ async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reactions)  # Send the reactions as a message
 
 # Main function
-def main():
+async def main():
     # Create Application
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -151,7 +151,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
 
     # Run webhook
-    app.run_webhook(
+    await app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
         port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
         url_path=BOT_TOKEN,  # Bot token as URL path
@@ -160,5 +160,8 @@ def main():
 
 # Entry point
 if __name__ == "__main__":
+    # Start the scheduler in an asyncio event loop
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # Run bot and scheduler under the same event loop
     scheduler.start()  # Start scheduler
-    main()
+    loop.run_forever()  # Run event loop
