@@ -1,7 +1,7 @@
 import os
 import requests
 import google.generativeai as genai
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -34,29 +34,30 @@ def get_time_based_greeting():
     else:
         return "Good Night!"
 
-# Start command: Send a custom start message with the time-based greeting
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    greeting = get_time_based_greeting()
-    welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
-    sent_message = await update.message.reply_text(welcome_text)
-    schedule_message_deletion(context, sent_message.chat_id, sent_message.message_id)
-
 # Function to schedule message deletion
-def schedule_message_deletion(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
+def schedule_message_deletion(job_queue: JobQueue, chat_id: int, message_id: int):
     # Schedule the message to be deleted after 60 seconds
-    context.job_queue.run_once(
-        delete_message, when=60, context={"chat_id": chat_id, "message_id": message_id}
+    job_queue.run_once(
+        delete_message, when=60, data={"chat_id": chat_id, "message_id": message_id}
     )
 
 # Function to delete a specific message
 async def delete_message(context: ContextTypes.DEFAULT_TYPE):
-    job_data = context.job.context
+    job_data = context.job.data
     chat_id = job_data["chat_id"]
     message_id = job_data["message_id"]
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception as e:
         print(f"Failed to delete message {message_id} in chat {chat_id}: {e}")
+
+# Start command: Send a custom start message with the time-based greeting
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    greeting = get_time_based_greeting()
+    welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
+    sent_message = await update.message.reply_text(welcome_text)
+    # Schedule deletion of the response message
+    schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,10 +92,10 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"IMDb couldn't find this movie, but here's what I found: \n\n{ai_response.text}"
             )
         # Schedule deletion of the response message
-        schedule_message_deletion(context, sent_message.chat_id, sent_message.message_id)
+        schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
     else:
         sent_message = await update.message.reply_text("Please provide a movie name.")
-        schedule_message_deletion(context, sent_message.chat_id, sent_message.message_id)
+        schedule_message_deletion(context.job_queue, sent_message.chat_id, sent_message.message_id)
 
 # Main function
 def main():
@@ -108,7 +109,7 @@ def main():
     # Run webhook
     app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
-        port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
+        port=int(os.getenv("PORT", 10000)),  # Ensure PORT is set to 10000 for Render
         url_path=BOT_TOKEN,  # Bot token as URL path
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",  # Full webhook URL
     )
