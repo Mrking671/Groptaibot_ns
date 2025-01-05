@@ -4,7 +4,6 @@ import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime
-from telegram import ParseMode  # Remove this line
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -88,9 +87,9 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         if poster_url != "N/A":
-            await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text, parse_mode="Markdown")
+            await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
         else:
-            await update.message.reply_text(reply_text, parse_mode="Markdown")
+            await update.message.reply_text(reply_text)
     else:
         # IMDb movie not found, ask AI for details
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
