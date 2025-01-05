@@ -32,8 +32,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
     message = await update.message.reply_text(welcome_text)
-    # Schedule deletion after 5 minutes
-    context.job_queue.run_once(delete_message, 300, data=message.message_id)
+    
+    # Schedule deletion after 60 seconds
+    context.job_queue.run_once(delete_bot_message, 60, context=message)
+
+# Admin command: Kick a user
+async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
+    if update.message.from_user.id == ADMIN_USER_ID:
+        if len(context.args) == 1:
+            user_id = int(context.args)
+            await context.bot.kick_chat_member(update.message.chat.id, user_id)
+            await update.message.reply_text(f"User {user_id} has been kicked.")
+        else:
+            await update.message.reply_text("Please provide a user ID to kick.")
+    else:
+        await update.message.reply_text("You are not authorized to use this command.")
+
+# Admin command: Clear chat
+async def clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
+    if update.message.from_user.id == ADMIN_USER_ID:
+        await context.bot.delete_messages(update.message.chat.id, )
+        await update.message.reply_text("Chat cleared.")
+    else:
+        await update.message.reply_text("You are not authorized to use this command.")
+
+# Welcome new users
+async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for new_member in update.message.new_chat_members:
+        photos = await context.bot.get_user_profile_photos(new_member.id)
+        if photos.total_count > 0:
+            photo_file_id = photos.photos.file_id
+            await context.bot.send_photo(
+                chat_id=update.message.chat_id,
+                photo=photo_file_id,
+                caption=f"Welcome, {new_member.full_name}!",
+            )
+        else:
+            await update.message.reply_text(f"Welcome, {new_member.full_name}!")
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,38 +94,51 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
         else:
             message = await update.message.reply_text(reply_text)
+        
+        # Schedule deletion after 60 seconds
+        context.job_queue.run_once(delete_bot_message, 60, context=message)
     else:
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
-        reply_text = f"> {ai_response.text}"  # Return AI response in quote format
-        message = await update.message.reply_text(reply_text)
-    
-    # Schedule deletion after 5 minutes
-    context.job_queue.run_once(delete_message, 300, data=message.message_id)
+        ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
+        message = await update.message.reply_text(ai_reply_text)
+        
+        # Schedule deletion after 60 seconds
+        context.job_queue.run_once(delete_bot_message, 60, context=message)
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
-        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+        await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
         return
 
     question = " ".join(context.args)
     try:
         response = model.generate_content(question)
         message = await update.message.reply_text(response.text)
-        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+        
+        # Schedule deletion after 60 seconds
+        context.job_queue.run_once(delete_bot_message, 60, context=message)
     except Exception as e:
-        message = await update.message.reply_text(f"An error occurred: {e}")
-        context.job_queue.run_once(delete_message, 300, data=message.message_id)
+        await update.message.reply_text(f"An error occurred: {e}")
 
-# Function to delete messages by message ID
-async def delete_message(context: ContextTypes.DEFAULT_TYPE):
+# Function to delete bot's own messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
+    message = job.context
     try:
-        job_data = context.job.data
-        chat_id = context.job.chat_id
-        await context.bot.delete_message(chat_id=chat_id, message_id=job_data)
+        await message.delete()
     except Exception as e:
-        print(f"Failed to delete message: {e}")
+        print(f"Error deleting message: {e}")
+
+# Auto-delete feature (after 60 seconds) for bot's own messages
+async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    # Schedule the deletion after 60 seconds (60 seconds * 1 second)
+    context.job_queue.run_once(delete_bot_message, 60, context=message)
+
+# Add reactions with multiple emojis on every message
+async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reactions = "❤🖐😊😂👍"  # Multiple emoji reactions
+    await update.message.reply_text(reactions)  # Send the reactions as a message
 
 # Main function
 def main():
@@ -98,7 +148,12 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
+    app.add_handler(CommandHandler("kick", kick_user))
+    app.add_handler(CommandHandler("clear", clear_chat))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
+    app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
+    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 60 seconds
 
     # Run webhook
     app.run_webhook(
