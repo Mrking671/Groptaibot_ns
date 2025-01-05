@@ -143,6 +143,10 @@ async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Main function
 def main():
+    # Start the event loop before anything
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     # Create Application
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -150,10 +154,9 @@ def main():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(delete_bot_message, 'interval', seconds=30, args=[None])  # Schedule deletion every 30 seconds
 
-    # Set the event loop explicitly
-    loop = asyncio.get_event_loop()
-    loop.create_task(scheduler.start())  # Start the scheduler in the event loop
-    
+    # Start the scheduler in the event loop
+    loop.create_task(scheduler.start())
+
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
@@ -164,7 +167,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
     app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 5 minutes
 
-    # Start the webhook
+    # Run the webhook
     loop.run_until_complete(app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
         port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
