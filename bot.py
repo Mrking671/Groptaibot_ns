@@ -150,6 +150,9 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
 
+    # Start scheduler after application setup
+    scheduler.start()
+
     # Run webhook
     await app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
@@ -160,11 +163,4 @@ async def main():
 
 # Entry point
 if __name__ == "__main__":
-    # Start the event loop manually
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # Start the bot and scheduler under the event loop
-    loop.create_task(main())  # Run bot and scheduler under the same event loop
-    scheduler.start()  # Start scheduler
-    loop.run_forever()  # Run event loop
+    asyncio.run(main())  # Use asyncio.run to start the bot
