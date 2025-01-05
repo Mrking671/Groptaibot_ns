@@ -1,8 +1,8 @@
 import os
 import requests
 import google.generativeai as genai
-from telegram import Update, Reaction
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, JobQueue
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import timedelta
 
 # Environment variables
@@ -77,10 +77,10 @@ async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule the deletion after 5 minutes (300 seconds)
     context.job_queue.run_once(auto_delete_message, 300, context=message)
 
-# Add a reaction to every message
+# Add reactions with multiple emojis on every message
 async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # You can choose to add a sticker or an emoji reaction
-    await update.message.react("👍")  # Add thumbs-up emoji reaction
+    reactions = "❤🖐😊😂👍"  # Multiple emoji reactions
+    await update.message.reply_text(reactions)  # Send the reactions as a message
 
 # Main function
 def main():
