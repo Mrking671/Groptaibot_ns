@@ -1,13 +1,18 @@
 import os
 import requests
+import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-IMDB_API_KEY = os.getenv("IMDB_API_KEY")
-GEMINI_API_URL = os.getenv("GEMINI_API_URL")
+IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")  # Default to the provided IMDb API key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")  # Default Gemini API key
+
+# Configure Gemini API
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Welcome new users
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -26,7 +31,7 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    movie_name = update.message.text
+    movie_name = update.message.text.strip()
     url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
     response = requests.get(url)
     data = response.json()
@@ -56,13 +61,11 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     question = " ".join(context.args)
-    response = requests.get(f"{GEMINI_API_URL}?text={question}")
-    data = response.json()
-
-    if "response" in data:
-        await update.message.reply_text(data["response"])
-    else:
-        await update.message.reply_text("Sorry, I couldn't process your request.")
+    try:
+        response = model.generate_content(question)
+        await update.message.reply_text(response.text)
+    except Exception as e:
+        await update.message.reply_text(f"An error occurred: {e}")
 
 # Main function
 def main():
