@@ -13,7 +13,14 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJI
 
 # Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+# Function to generate AI content using Gemini API
+def generate_ai_content(prompt: str) -> str:
+    try:
+        response = genai.generate_text(model="models/text-bison-001", prompt=prompt)
+        return response["candidates"][0]["output"] if response["candidates"] else "No response generated."
+    except Exception as e:
+        return f"Error generating AI response: {e}"
 
 # Custom greeting based on time of day
 def get_time_based_greeting():
@@ -58,9 +65,8 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = await update.message.reply_text(reply_text)
         context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
     else:
-        ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
-        ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
-        message = await update.message.reply_text(ai_reply_text)
+        ai_reply = generate_ai_content(f"Tell me about the movie {movie_name}")
+        message = await update.message.reply_text(f"AI Response:\n{ai_reply}")
         context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
 
 # AI response using Gemini API
@@ -71,8 +77,8 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     question = " ".join(context.args)
     try:
-        response = model.generate_content(question)
-        message = await update.message.reply_text(response.text)
+        ai_reply = generate_ai_content(question)
+        message = await update.message.reply_text(ai_reply)
         context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
