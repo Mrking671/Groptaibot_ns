@@ -35,7 +35,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ADMIN_USER_ID = 2034654684  # Replace with actual admin user ID
+    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
     if update.message.from_user.id == ADMIN_USER_ID:
         if len(context.args) == 1:
             user_id = int(context.args[0])
@@ -110,7 +110,7 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
 
-# Auto-delete feature (after 5 minutes)
+# Auto-delete feature (after 5 minutes) for bot's own messages
 async def auto_delete_message(context: ContextTypes.DEFAULT_TYPE, job):
     message = job.context
     if message.from_user.id == context.bot.id:  # Only delete bot's own messages
