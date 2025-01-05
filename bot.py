@@ -160,8 +160,11 @@ async def main():
 
 # Entry point
 if __name__ == "__main__":
-    # Start the scheduler in an asyncio event loop
-    loop = asyncio.get_event_loop()
+    # Start the event loop manually
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Start the bot and scheduler under the event loop
     loop.create_task(main())  # Run bot and scheduler under the same event loop
     scheduler.start()  # Start scheduler
     loop.run_forever()  # Run event loop
