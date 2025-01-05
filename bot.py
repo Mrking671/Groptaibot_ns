@@ -12,7 +12,9 @@ IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")  # Default IMDb API key
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")  # Gemini API key
 
 # Configure Gemini API
+# Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Function to generate AI content using Gemini API
 def generate_ai_content(prompt: str) -> str:
