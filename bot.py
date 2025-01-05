@@ -3,7 +3,8 @@ import requests
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from datetime import datetime
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -34,7 +35,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = await update.message.reply_text(welcome_text)
     
     # Schedule deletion after 60 seconds
-    context.job_queue.run_once(delete_bot_message, 60, context=message)
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(delete_message, 'date', run_date=datetime.now() + timedelta(seconds=60), args=)
+    scheduler.start()
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,14 +99,18 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = await update.message.reply_text(reply_text)
         
         # Schedule deletion after 60 seconds
-        context.job_queue.run_once(delete_bot_message, 60, context=message)
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(delete_message, 'date', run_date=datetime.now() + timedelta(seconds=60), args=)
+        scheduler.start()
     else:
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
         ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
         message = await update.message.reply_text(ai_reply_text)
         
         # Schedule deletion after 60 seconds
-        context.job_queue.run_once(delete_bot_message, 60, context=message)
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(delete_message, 'date', run_date=datetime.now() + timedelta(seconds=60), args=)
+        scheduler.start()
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,23 +124,18 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = await update.message.reply_text(response.text)
         
         # Schedule deletion after 60 seconds
-        context.job_queue.run_once(delete_bot_message, 60, context=message)
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(delete_message, 'date', run_date=datetime.now() + timedelta(seconds=60), args=)
+        scheduler.start()
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
 
-# Function to delete bot's own messages
-async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
-    message = job.context
+# Function to delete message
+async def delete_message(context: ContextTypes.DEFAULT_TYPE, message_id, chat_id):
     try:
-        await message.delete()
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception as e:
         print(f"Error deleting message: {e}")
-
-# Auto-delete feature (after 60 seconds) for bot's own messages
-async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    # Schedule the deletion after 60 seconds (60 seconds * 1 second)
-    context.job_queue.run_once(delete_bot_message, 60, context=message)
 
 # Add reactions with multiple emojis on every message
 async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,7 +155,6 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
-    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 60 seconds
 
     # Run webhook
     app.run_webhook(
