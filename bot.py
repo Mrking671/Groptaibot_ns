@@ -18,7 +18,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 def generate_ai_content(prompt: str) -> str:
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate(prompt=prompt)  # Use 'generate' method
+        response = model.query(prompt=prompt)  # Use 'query' method for text generation
         return response['candidates'][0]['text'] if response['candidates'] else "No response generated."
     except Exception as e:
         return f"Error generating AI response: {e}"
