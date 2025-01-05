@@ -3,6 +3,7 @@ import requests
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext
+from datetime import datetime, timedelta  # Import datetime and timedelta
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
