@@ -39,10 +39,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
     message = await update.message.reply_text(welcome_text)
-    context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
+
+    # Schedule deletion after 30 seconds
+    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return  # Ignore updates without a text message
+
     movie_name = update.message.text.strip()
     url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
     response = requests.get(url)
@@ -63,42 +68,37 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
         else:
             message = await update.message.reply_text(reply_text)
-        context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
     else:
         ai_reply = generate_ai_content(f"Tell me about the movie {movie_name}")
         message = await update.message.reply_text(f"AI Response:\n{ai_reply}")
-        context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
+
+    # Schedule deletion after 30 seconds
+    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+
+# Function to delete bot's own messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
+    data = context.job.data
+    message = data.get("message")
+
+    if message:
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"Error deleting message: {e}")
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
+        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
+        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
         return
 
     question = " ".join(context.args)
-    try:
-        ai_reply = generate_ai_content(question)
-        message = await update.message.reply_text(ai_reply)
-        context.job_queue.run_once(delete_bot_message, 30, context=message)  # Auto-delete in 30 seconds
-    except Exception as e:
-        await update.message.reply_text(f"An error occurred: {e}")
+    ai_reply = generate_ai_content(question)
+    message = await update.message.reply_text(ai_reply)
 
-# Function to delete bot's own messages
-async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
-    try:
-        message = context.job.context
-        if message:
-            await message.delete()
-            print("Message deleted successfully.")
-        else:
-            print("No message found in job context.")
-    except Exception as e:
-        print(f"Error deleting message: {e}")
-
-# Test command to validate message deletion
-async def test_delete_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = await update.message.reply_text("This message will be deleted in 30 seconds.")
-    context.job_queue.run_once(delete_bot_message, 30, context=message)
+    # Schedule deletion after 30 seconds
+    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
 # Main function
 def main():
@@ -108,7 +108,6 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
-    app.add_handler(CommandHandler("testdelete", test_delete_message))  # Test delete command
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
 
     # Run webhook
