@@ -14,6 +14,14 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJI
 # Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
 
+# Function to generate AI content using Gemini API
+def generate_ai_content(prompt: str) -> str:
+    try:
+        response = genai.generate_text(model="models/text-bison-001", prompt=prompt)
+        return response["candidates"][0]["output"] if response["candidates"] else "No response generated."
+    except Exception as e:
+        return f"Error generating AI response: {e}"
+
 # Custom greeting based on time of day
 def get_time_based_greeting():
     hour = datetime.now().hour
@@ -26,59 +34,14 @@ def get_time_based_greeting():
     else:
         return "Good Night!"
 
-# Generate AI content using Gemini API
-def generate_ai_content(prompt: str) -> str:
-    try:
-        # Use the correct method to generate AI response
-        response = genai.generate_text(model="gemini-1.5-flash", prompt=prompt)
-        return response['text'] if 'text' in response else "No response generated."
-    except Exception as e:
-        return f"Error generating AI response: {e}"
-
 # Start command: Send a custom start message with the time-based greeting
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
     message = await update.message.reply_text(welcome_text)
-    
+
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
-
-# Admin command: Kick a user
-async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
-    if update.message.from_user.id == ADMIN_USER_ID:
-        if len(context.args) == 1:
-            user_id = int(context.args[0])
-            await context.bot.kick_chat_member(update.message.chat.id, user_id)
-            await update.message.reply_text(f"User {user_id} has been kicked.")
-        else:
-            await update.message.reply_text("Please provide a user ID to kick.")
-    else:
-        await update.message.reply_text("You are not authorized to use this command.")
-
-# Admin command: Clear chat
-async def clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
-    if update.message.from_user.id == ADMIN_USER_ID:
-        await context.bot.delete_messages(update.message.chat.id, [message.message_id for message in update.message.chat.messages])
-        await update.message.reply_text("Chat cleared.")
-    else:
-        await update.message.reply_text("You are not authorized to use this command.")
-
-# Welcome new users
-async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    for new_member in update.message.new_chat_members:
-        photos = await context.bot.get_user_profile_photos(new_member.id)
-        if photos.total_count > 0:
-            photo_file_id = photos.photos[0][0].file_id
-            await context.bot.send_photo(
-                chat_id=update.message.chat_id,
-                photo=photo_file_id,
-                caption=f"Welcome, {new_member.full_name}!",
-            )
-        else:
-            await update.message.reply_text(f"Welcome, {new_member.full_name}!")
 
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,38 +75,30 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
+# Function to delete bot's own messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
+    data = context.job.data
+    message = data.get("message")
+
+    if message:
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"Error deleting message: {e}")
+
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
+        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
+        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
         return
 
     question = " ".join(context.args)
-    try:
-        ai_reply = generate_ai_content(question)
-        message = await update.message.reply_text(f"AI Response:\n{ai_reply}")
-        
-        # Schedule deletion after 30 seconds
-        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
-    except Exception as e:
-        await update.message.reply_text(f"An error occurred: {e}")
+    ai_reply = generate_ai_content(question)
+    message = await update.message.reply_text(ai_reply)
 
-# Function to delete bot's own messages
-async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
-    message = job.data.get("message")
-    if message and message.from_user.id == context.bot.id:  # Ensure we only delete bot's messages
-        await message.delete()
-
-# Auto-delete feature (after 30 seconds) for bot's own messages
-async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    # Schedule the deletion after 30 seconds
+    # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
-
-# Add reactions with multiple emojis on every message
-async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reactions = "❤🖐😊😂👍"  # Multiple emoji reactions
-    await update.message.reply_text(reactions)  # Send the reactions as a message
 
 # Main function
 def main():
@@ -153,12 +108,7 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
-    app.add_handler(CommandHandler("kick", kick_user))
-    app.add_handler(CommandHandler("clear", clear_chat))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
-    app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
-    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 30 seconds
 
     # Run webhook
     app.run_webhook(
