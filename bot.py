@@ -35,7 +35,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id == ADMIN_USER_ID:  # Replace with actual admin user ID
+    ADMIN_USER_ID = 2034654684  # Replace with actual admin user ID
+    if update.message.from_user.id == ADMIN_USER_ID:
         if len(context.args) == 1:
             user_id = int(context.args[0])
             await context.bot.kick_chat_member(update.message.chat.id, user_id)
@@ -47,7 +48,8 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Admin command: Clear chat
 async def clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id == ADMIN_USER_ID:  # Replace with actual admin user ID
+    ADMIN_USER_ID = 123456789  # Replace with actual admin user ID
+    if update.message.from_user.id == ADMIN_USER_ID:
         await context.bot.delete_messages(update.message.chat.id, [message.message_id for message in update.message.chat.messages])
         await update.message.reply_text("Chat cleared.")
     else:
@@ -56,7 +58,6 @@ async def clear_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Welcome new users
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for new_member in update.message.new_chat_members:
-        # Fetch user profile photos
         photos = await context.bot.get_user_profile_photos(new_member.id)
         if photos.total_count > 0:
             photo_file_id = photos.photos[0][0].file_id
@@ -91,9 +92,10 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(reply_text)
     else:
-        # IMDb movie not found, ask AI for details
+        # IMDb movie not found, ask AI for details and return in a quote
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
-        await update.message.reply_text(f"IMDb couldn't find this movie, but here's what I found: \n\n{ai_response.text}")
+        ai_reply_text = f"> {ai_response.text}"  # Use the 'quote' format here
+        await update.message.reply_text(ai_reply_text)
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,7 +112,9 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Auto-delete feature (after 5 minutes)
 async def auto_delete_message(context: ContextTypes.DEFAULT_TYPE, job):
-    job.context.delete_message(chat_id=job.context.chat.id, message_id=job.context.message_id)
+    message = job.context
+    if message.from_user.id == context.bot.id:  # Only delete bot's own messages
+        await message.delete()
 
 async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
