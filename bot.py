@@ -3,9 +3,9 @@ import requests
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
-import asyncio
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -17,7 +17,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Scheduler
+# Initialize scheduler
 scheduler = AsyncIOScheduler()
 
 # Custom greeting based on time of day
@@ -131,13 +131,19 @@ async def delete_bot_message(message):
     if message.from_user.id == message.bot.id:  # Ensure we only delete bot's messages
         await message.delete()
 
+# Auto-delete feature (after 30 seconds) for bot's own messages
+async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    # Schedule the deletion after 30 seconds
+    scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
+
 # Add reactions with multiple emojis on every message
 async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reactions = "❤🖐😊😂👍"  # Multiple emoji reactions
     await update.message.reply_text(reactions)  # Send the reactions as a message
 
 # Main function
-async def main():
+def main():
     # Create Application
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -149,12 +155,13 @@ async def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
     app.add_handler(MessageHandler(filters.TEXT, add_reaction))  # Reaction on every message
+    app.add_handler(MessageHandler(filters.TEXT, auto_delete))  # Auto-delete after 30 seconds
 
-    # Start scheduler after application setup
+    # Start scheduler
     scheduler.start()
 
     # Run webhook
-    await app.run_webhook(
+    app.run_webhook(
         listen="0.0.0.0",  # Listen on all interfaces
         port=int(os.getenv("PORT", 8443)),  # Use Render's PORT or default to 8443
         url_path=BOT_TOKEN,  # Bot token as URL path
@@ -163,5 +170,4 @@ async def main():
 
 # Entry point
 if __name__ == "__main__":
-    # Let the library manage the event loop
-    main()  # Directly call main instead of asyncio.run(main())
+    main()
