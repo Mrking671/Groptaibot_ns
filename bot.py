@@ -3,8 +3,8 @@ import requests
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from datetime import datetime, timedelta
-from telegram import ParseMode
+from datetime import datetime
+from telegram import ParseMode  # Remove this line
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -36,7 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id == 22711559:  # Replace with actual admin user ID
+    if update.message.from_user.id == ADMIN_USER_ID:  # Replace with actual admin user ID
         if len(context.args) == 1:
             user_id = int(context.args[0])
             await context.bot.kick_chat_member(update.message.chat.id, user_id)
@@ -88,7 +88,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         if poster_url != "N/A":
-            await context.bot.send_photo(chat_id=update.message.chat_id, photo=poster_url, caption=reply_text, parse_mode="Markdown")
+            await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text, parse_mode="Markdown")
         else:
             await update.message.reply_text(reply_text, parse_mode="Markdown")
     else:
