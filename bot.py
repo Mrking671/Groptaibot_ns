@@ -31,7 +31,10 @@ def get_time_based_greeting():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
-    await update.message.reply_text(welcome_text)
+    message = await update.message.reply_text(welcome_text)
+    
+    # Schedule deletion after 5 minutes
+    context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,14 +91,19 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         if poster_url != "N/A":
-            await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
+            message = await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
         else:
-            await update.message.reply_text(reply_text)
+            message = await update.message.reply_text(reply_text)
+        
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
     else:
-        # IMDb movie not found, ask AI for details and return in a quote
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
-        ai_reply_text = f"> {ai_response.text}"  # Use the 'quote' format here
-        await update.message.reply_text(ai_reply_text)
+        ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
+        message = await update.message.reply_text(ai_reply_text)
+        
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,20 +114,24 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = " ".join(context.args)
     try:
         response = model.generate_content(question)
-        await update.message.reply_text(response.text)
+        message = await update.message.reply_text(response.text)
+        
+        # Schedule deletion after 5 minutes
+        context.job_queue.run_once(delete_bot_message, 300, context=message)
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
 
-# Auto-delete feature (after 5 minutes) for bot's own messages
-async def auto_delete_message(context: ContextTypes.DEFAULT_TYPE, job):
+# Function to delete bot's own messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE, job):
     message = job.context
-    if message.from_user.id == context.bot.id:  # Only delete bot's own messages
+    if message.from_user.id == context.bot.id:  # Ensure we only delete bot's messages
         await message.delete()
 
+# Auto-delete feature (after 5 minutes) for bot's own messages
 async def auto_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     # Schedule the deletion after 5 minutes (300 seconds)
-    context.job_queue.run_once(auto_delete_message, 300, context=message)
+    context.job_queue.run_once(delete_bot_message, 300, context=message)
 
 # Add reactions with multiple emojis on every message
 async def add_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
