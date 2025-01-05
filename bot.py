@@ -17,13 +17,9 @@ genai.configure(api_key=GEMINI_API_KEY)
 # Function to generate AI content using Gemini API
 def generate_ai_content(prompt: str) -> str:
     try:
-        # Initialize the model using the specified model ID
         model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        # Generate text based on the prompt
-        response = model.generate_text(prompt=prompt)
-        
-        return response['candidates'][0]['output'] if response['candidates'] else "No response generated."
+        response = model.generate(prompt=prompt)  # Use 'generate' method
+        return response['candidates'][0]['text'] if response['candidates'] else "No response generated."
     except Exception as e:
         return f"Error generating AI response: {e}"
 
