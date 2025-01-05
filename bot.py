@@ -3,9 +3,9 @@ import requests
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+import asyncio
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -17,8 +17,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJI
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Initialize APScheduler
-scheduler = BackgroundScheduler()
+# Scheduler
+scheduler = AsyncIOScheduler()
 
 # Custom greeting based on time of day
 def get_time_based_greeting():
@@ -38,8 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
     message = await update.message.reply_text(welcome_text)
     
-    # Schedule deletion after 5 minutes using APScheduler
-    scheduler.add_job(delete_bot_message, IntervalTrigger(seconds=30), args=[update.message])
+    # Schedule deletion after 30 seconds
+    scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
 
 # Admin command: Kick a user
 async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,15 +100,15 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message = await update.message.reply_text(reply_text)
         
-        # Schedule deletion after 5 minutes using APScheduler
-        scheduler.add_job(delete_bot_message, IntervalTrigger(seconds=30), args=[message])
+        # Schedule deletion after 30 seconds
+        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
     else:
         ai_response = model.generate_content(f"Tell me about the movie {movie_name}")
         ai_reply_text = f"> {ai_response.text}"  # Return AI response in quote format
         message = await update.message.reply_text(ai_reply_text)
         
-        # Schedule deletion after 5 minutes using APScheduler
-        scheduler.add_job(delete_bot_message, IntervalTrigger(seconds=30), args=[message])
+        # Schedule deletion after 30 seconds
+        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,8 +121,8 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = model.generate_content(question)
         message = await update.message.reply_text(response.text)
         
-        # Schedule deletion after 5 minutes using APScheduler
-        scheduler.add_job(delete_bot_message, IntervalTrigger(seconds=30), args=[message])
+        # Schedule deletion after 30 seconds
+        scheduler.add_job(delete_bot_message, 'date', run_date=datetime.now() + timedelta(seconds=30), args=[message])
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {e}")
 
@@ -160,5 +160,5 @@ def main():
 
 # Entry point
 if __name__ == "__main__":
-    scheduler.start()  # Start APScheduler
+    scheduler.start()  # Start scheduler
     main()
