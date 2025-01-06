@@ -183,7 +183,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
-    app.add_handler(MessageHandler(filters.StatusUpdate.MEMBER_STATUS, welcome))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))  # Correct filter for new members
 
     app.run_webhook(
         listen="0.0.0.0",
