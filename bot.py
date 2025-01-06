@@ -2,26 +2,38 @@ import os
 import requests
 import google.generativeai as genai
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext
 from datetime import datetime
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")  # Default IMDb API key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")  # Gemini API key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")  # Default Gemini API key
 
-# Configure Gemini API
+# Configure Gemini API and model
 genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Function to generate AI content using Gemini API
+# Function to generate AI content
 def generate_ai_content(prompt: str) -> str:
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.query(prompt=prompt)  # Use 'query' method for text generation
-        return response['candidates'][0]['text'] if response['candidates'] else "No response generated."
+        response = model.generate_content(prompt)
+        return response.text if response else "No response generated."
     except Exception as e:
-        return f"Error generating AI response: {e}"
+        print(f"Error generating AI response: {e}")
+        return "Error generating AI response."
+
+# Function to delete bot's own messages
+async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
+    data = context.job.data
+    message = data.get("message")
+
+    if message:
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"Error deleting message: {e}")
 
 # Custom greeting based on time of day
 def get_time_based_greeting():
@@ -44,11 +56,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
+# Welcome new users
+async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for new_member in update.message.new_chat_members:
+        # Fetch user profile photos
+        photos = await context.bot.get_user_profile_photos(new_member.id)
+        if photos.total_count > 0:
+            photo_file_id = photos.photos[0][0].file_id
+            message = await context.bot.send_photo(
+                chat_id=update.message.chat_id,
+                photo=photo_file_id,
+                caption=f"Welcome, {new_member.full_name}!",
+            )
+        else:
+            message = await update.message.reply_text(f"Welcome, {new_member.full_name}!")
+
+        # Schedule deletion after 30 seconds
+        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+
 # IMDb information fetcher
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return  # Ignore updates without a text message
-
     movie_name = update.message.text.strip()
     url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
     response = requests.get(url)
@@ -66,26 +93,14 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         if poster_url != "N/A":
-            message = await context.bot.send_photo(chat_id=update.message.chat.id, photo=poster_url, caption=reply_text)
+            message = await context.bot.send_photo(chat_id=update.message.chat_id, photo=poster_url, caption=reply_text, parse_mode="Markdown")
         else:
-            message = await update.message.reply_text(reply_text)
+            message = await update.message.reply_text(reply_text, parse_mode="Markdown")
     else:
-        ai_reply = generate_ai_content(f"Tell me about the movie {movie_name}")
-        message = await update.message.reply_text(f"AI Response:\n{ai_reply}")
+        message = await update.message.reply_text("Movie not found. Please check the name and try again.")
 
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
-
-# Function to delete bot's own messages
-async def delete_bot_message(context: ContextTypes.DEFAULT_TYPE):
-    data = context.job.data
-    message = data.get("message")
-
-    if message:
-        try:
-            await message.delete()
-        except Exception as e:
-            print(f"Error deleting message: {e}")
 
 # AI response using Gemini API
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,6 +125,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ai", ai_response))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
 
     # Run webhook
     app.run_webhook(
