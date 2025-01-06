@@ -4,6 +4,9 @@ import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext
 from datetime import datetime
+from langdetect import detect
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -56,19 +59,46 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
-# Welcome new users
+# Welcome new users with profile picture on a rectangular background
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for new_member in update.message.new_chat_members:
         # Fetch user profile photos
         photos = await context.bot.get_user_profile_photos(new_member.id)
         if photos.total_count > 0:
+            # Get the first photo
             photo_file_id = photos.photos[0][0].file_id
+            photo = await context.bot.get_file(photo_file_id)
+
+            # Download the image
+            photo_path = photo.file_path
+            photo_data = await context.bot.download_file(photo_path)
+
+            # Open the user's photo using Pillow
+            user_photo = Image.open(io.BytesIO(photo_data))
+
+            # Create a rectangular background (use any color or design)
+            background = Image.new('RGB', (500, 250), (255, 255, 255))  # 500x250 white background
+            background.paste(user_photo.resize((100, 100)), (200, 75))  # Resize and paste user's photo
+
+            # Optionally add some text (like a welcome message) on the background
+            draw = ImageDraw.Draw(background)
+            font = ImageFont.load_default()  # You can load a custom font here
+            text = f"Welcome, {new_member.full_name}!"
+            draw.text((180, 20), text, fill="black", font=font)
+
+            # Save the image to a bytes buffer
+            byte_io = io.BytesIO()
+            background.save(byte_io, format='PNG')
+            byte_io.seek(0)
+
+            # Send the image as a photo in the chat
             message = await context.bot.send_photo(
                 chat_id=update.message.chat_id,
-                photo=photo_file_id,
-                caption=f"Welcome, {new_member.full_name}!",
+                photo=byte_io,
+                caption=f"Welcome, {new_member.full_name}!"
             )
         else:
+            # If no profile photo, just send a text message
             message = await update.message.reply_text(f"Welcome, {new_member.full_name}!")
 
         # Schedule deletion after 30 seconds
@@ -97,7 +127,9 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             message = await update.message.reply_text(reply_text, parse_mode="Markdown")
     else:
-        message = await update.message.reply_text("Movie not found. Please check the name and try again.")
+        # Send AI response if movie not found
+        ai_reply = generate_ai_content("Movie not found: " + movie_name)
+        message = await update.message.reply_text(ai_reply)
 
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
