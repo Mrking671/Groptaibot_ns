@@ -29,12 +29,14 @@ def generate_ai_content(prompt: str) -> str:
 
 # Function to delete bot's messages after a delay
 async def delete_bot_message(context):
-    job = context.job
-    message = job.data.get("message")
-    try:
-        await message.delete()
-    except Exception as e:
-        print(f"Error deleting message: {e}")
+    data = context.job.data
+    message = data.get("message")
+
+    if message:
+        try:
+            await message.delete()
+        except Exception as e:
+            print(f"Error deleting message: {e}")
 
 # Greeting based on time of day
 def get_time_based_greeting():
@@ -142,7 +144,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if poster_url != "N/A":
-            await context.bot.send_photo(
+            message = await context.bot.send_photo(
                 chat_id=update.message.chat_id,
                 photo=poster_url,
                 caption=reply_text,
@@ -150,14 +152,19 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=download_button
             )
         else:
-            await update.message.reply_text(
+            message = await update.message.reply_text(
                 reply_text,
                 parse_mode="Markdown",
                 reply_markup=download_button
             )
     else:
         ai_response = generate_ai_content(f"Can you describe the movie '{movie_name}'?")
-        await update.message.reply_text(f"Movie not found in IMDb. Here's an AI-generated description:\n\n{ai_response}")
+        message = await update.message.reply_text(
+            f"Movie not found in IMDb. Here's an AI-generated description:\n\n{ai_response}"
+        )
+
+    # Schedule deletion after 30 seconds
+    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
 # AI response command
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
