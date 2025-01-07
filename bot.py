@@ -94,7 +94,8 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IOError:
             font = ImageFont.load_default()
 
-        text_width, text_height = draw.textsize(user_name, font=font)
+        # Calculate text size using font.getsize()
+        text_width, text_height = font.getsize(user_name)
         text_x = (400 - text_width) // 2
         draw.text((text_x, 350), user_name, fill="black", font=font, align="center")
 
