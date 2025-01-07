@@ -94,8 +94,9 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except IOError:
             font = ImageFont.load_default()
 
-        # Calculate text size using font.getsize()
-        text_width, text_height = font.getsize(user_name)
+        # Calculate text size using font.getbbox()
+        text_bbox = font.getbbox(user_name)
+        text_width = text_bbox[2] - text_bbox[0]
         text_x = (400 - text_width) // 2
         draw.text((text_x, 350), user_name, fill="black", font=font, align="center")
 
@@ -116,6 +117,9 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # IMDb information fetcher with "Download Now" button
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return  # Exit if the update does not contain text
+
     movie_name = update.message.text.strip()
     url = f"http://www.omdbapi.com/?t={movie_name}&apikey={IMDB_API_KEY}"
     response = requests.get(url)
