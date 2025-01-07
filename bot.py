@@ -57,7 +57,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = await update.message.reply_text(welcome_text)
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 100, data={"message": message})
 
 # Welcome new members with custom square image
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,7 +116,7 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
             # Schedule deletion after 30 seconds
-            context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
+            context.job_queue.run_once(delete_bot_message, 100, data={"message": message})
         except Exception as e:
             print(f"Error sending welcome image: {e}")
 
@@ -143,7 +143,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         download_button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Download Now (PREMIUM USERS)💛", url="https://your-download-link.com")]]
+            [[InlineKeyboardButton("Download Now(PREMIUM Only)💛", url="https://telegra.ph/SORRY-You-are-not-premium-user-01-07")]]
         )
 
         if poster_url != "N/A":
@@ -167,13 +167,13 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 100, data={"message": message})
 
 # AI response command
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
         message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>😊")
-        context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
+        context.job_queue.run_once(delete_bot_message, 100, data={"message": message})
         return
 
     question = " ".join(context.args)
@@ -181,7 +181,7 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = await update.message.reply_text(ai_reply)
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 100, data={"message": message})
 
 # Main function
 def main():
