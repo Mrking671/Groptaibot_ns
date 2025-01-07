@@ -53,11 +53,11 @@ def get_time_based_greeting():
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     greeting = get_time_based_greeting()
-    welcome_text = f"{greeting}\n\nI'm your friendly bot! How can I assist you today?"
+    welcome_text = f"{greeting}😊\n\nɪ'ᴍ ᴀᴅᴠᴀɴᴄᴇᴅ ᴀɪ ʙᴏᴛ ʜᴇʟᴘ ʏᴏᴜ ᴛᴏ ғɪɴᴅ ʏᴏᴜʀ ғᴀᴠᴏʀɪᴛᴇ ᴍᴏᴠɪᴇs ᴅᴇᴛᴀɪʟs.\nᴊᴜsᴛ ᴛʏᴘᴇ ᴍᴏᴠɪᴇ ɴᴀᴍᴇ ɪ'ʟʟ ᴘʀᴏᴠɪᴅᴇ ʏᴏᴜ ᴍᴏᴠɪᴇ ᴅᴇᴛᴀɪʟs ᴀs ᴡᴇʟʟ ᴀs ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ.\n\nᴀɴʏ ǫᴜᴇsᴛɪᴏɴ ᴜsᴇ ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ - /ai 𝚢𝚘𝚞𝚛 𝚚𝚞𝚎𝚜𝚝𝚒𝚘𝚗.\n𝗠𝗔𝗗𝗘 𝗪𝗜𝗧𝗛 ❤ 𝗯𝘆 @Lordsakunaa"
     message = await update.message.reply_text(welcome_text)
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
 
 # Welcome new members with custom square image
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,11 +112,11 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message = await context.bot.send_photo(
                 chat_id=update.message.chat_id,
                 photo=output,
-                caption=f"Welcome to the group!\n\n👤 Name: {user_name}\n🆔 ID: {user_id}\n🔗 Username: @{username}"
+                caption=f"𝐖𝐄𝐋𝐂𝐎𝐌𝐄❤\n\n👤 Name: {user_name}\n🆔 ID: {user_id}\n🔗 Username: @{username}\n\nᴛʏᴘᴇ ᴀɴʏ ᴍᴏᴠɪᴇ ɴᴀᴍᴇ ɪɴ ᴛʜɪs ɢʀᴏᴜᴘ ɪ'ʟʟ ᴘʀᴏᴠɪᴅᴇ ɪᴛ ᴛᴏ ʏᴏᴜ😊"
             )
 
             # Schedule deletion after 30 seconds
-            context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+            context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
         except Exception as e:
             print(f"Error sending welcome image: {e}")
 
@@ -143,7 +143,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         download_button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Download Now", url="https://your-download-link.com")]]
+            [[InlineKeyboardButton("Download Now (PREMIUM USERS)💛", url="https://your-download-link.com")]]
         )
 
         if poster_url != "N/A":
@@ -163,17 +163,17 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         ai_response = generate_ai_content(f"Can you describe the movie '{movie_name}'?")
         message = await update.message.reply_text(
-            f"Movie not found in IMDb. Here's an AI-generated description:\n\n{ai_response}"
+            f"Movie not found in IMDb. Here's an AI-generated description👇:\n\n{ai_response}😊"
         )
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
 
 # AI response command
 async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>")
-        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+        message = await update.message.reply_text("Please provide a question. Usage: /ai <your question>😊")
+        context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
         return
 
     question = " ".join(context.args)
@@ -181,7 +181,7 @@ async def ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = await update.message.reply_text(ai_reply)
 
     # Schedule deletion after 30 seconds
-    context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
+    context.job_queue.run_once(delete_bot_message, 300, data={"message": message})
 
 # Main function
 def main():
