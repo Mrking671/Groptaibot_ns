@@ -29,14 +29,12 @@ def generate_ai_content(prompt: str) -> str:
 
 # Function to delete bot's messages after a delay
 async def delete_bot_message(context):
-    data = context.job.data
-    message = data.get("message")
-
-    if message:
-        try:
-            await message.delete()
-        except Exception as e:
-            print(f"Error deleting message: {e}")
+    job = context.job
+    message = job.data.get("message")
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Error deleting message: {e}")
 
 # Greeting based on time of day
 def get_time_based_greeting():
@@ -59,7 +57,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
-# Welcome new members with a custom image
+# Welcome new members with custom square image
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for new_member in update.message.new_chat_members:
         user_name = new_member.full_name or "Unknown User"
@@ -74,30 +72,31 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 photo_bytes = await photo_file.download_as_bytearray()
                 user_photo = Image.open(io.BytesIO(photo_bytes))
             else:
-                user_photo = Image.new("RGB", (200, 200), (128, 128, 128))  # Default gray
+                user_photo = Image.new("RGB", (400, 400), (128, 128, 128))  # Default gray
         except Exception as e:
             print(f"Error fetching profile photo: {e}")
-            user_photo = Image.new("RGB", (200, 200), (128, 128, 128))  # Default gray
+            user_photo = Image.new("RGB", (400, 400), (128, 128, 128))  # Default gray
 
-        # Create a rectangular white background
-        background = Image.new("RGB", (400, 500), "white")
+        # Create a square image (400x400) with circular DP
+        background = Image.new("RGB", (400, 400), "white")
         draw = ImageDraw.Draw(background)
 
         # Circular mask for user DP
-        user_photo = user_photo.resize((200, 200)).convert("RGBA")
+        user_photo = user_photo.resize((300, 300)).convert("RGBA")
         mask = Image.new("L", user_photo.size, 0)
         draw_mask = ImageDraw.Draw(mask)
         draw_mask.ellipse((0, 0) + user_photo.size, fill=255)
-        background.paste(user_photo, (100, 50), mask)
+        background.paste(user_photo, (50, 50), mask)
 
-        # Add username and ID below the photo
+        # Add username at the bottom center of the image
         try:
             font = ImageFont.truetype(random.choice(["arial.ttf", "times.ttf", "calibri.ttf"]), 24)
         except IOError:
             font = ImageFont.load_default()
 
-        text = f"Welcome, {user_name}!\nID: {user_id}\nUsername: @{username}"
-        draw.text((50, 300), text, fill="black", font=font, align="center")
+        text_width, text_height = draw.textsize(user_name, font=font)
+        text_x = (400 - text_width) // 2
+        draw.text((text_x, 350), user_name, fill="black", font=font, align="center")
 
         # Save the image to bytes
         output = io.BytesIO()
@@ -109,7 +108,7 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_photo(
                 chat_id=update.message.chat_id,
                 photo=output,
-                caption=f"Welcome to the group, {user_name}!"
+                caption=f"Welcome to the group!\n\n👤 Name: {user_name}\n🆔 ID: {user_id}\n🔗 Username: @{username}"
             )
         except Exception as e:
             print(f"Error sending welcome image: {e}")
