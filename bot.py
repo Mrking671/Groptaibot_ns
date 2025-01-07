@@ -196,7 +196,7 @@ def main():
     # Run webhook
     app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.getenv("PORT", 8443)),
+        port=int(os.getenv("PORT", 10000)),
         url_path=BOT_TOKEN,
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
     )
