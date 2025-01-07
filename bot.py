@@ -109,16 +109,16 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Send the generated image to the group
         try:
-            await context.bot.send_photo(
+            message = await context.bot.send_photo(
                 chat_id=update.message.chat_id,
                 photo=output,
                 caption=f"Welcome to the group!\n\n👤 Name: {user_name}\n🆔 ID: {user_id}\n🔗 Username: @{username}"
             )
+
+            # Schedule deletion after 30 seconds
+            context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
         except Exception as e:
             print(f"Error sending welcome image: {e}")
-            
-        # Schedule deletion after 30 seconds
-        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})    
 
 # IMDb information fetcher with "Download Now" button
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
