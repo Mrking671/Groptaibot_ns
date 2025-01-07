@@ -116,6 +116,9 @@ async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as e:
             print(f"Error sending welcome image: {e}")
+            
+        # Schedule deletion after 30 seconds
+        context.job_queue.run_once(delete_bot_message, 30, data={"message": message})    
 
 # IMDb information fetcher with "Download Now" button
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
