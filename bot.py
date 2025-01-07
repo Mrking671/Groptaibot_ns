@@ -1,4 +1,5 @@
 import os
+import random
 import requests
 import google.generativeai as genai
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -58,48 +59,60 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Schedule deletion after 30 seconds
     context.job_queue.run_once(delete_bot_message, 30, data={"message": message})
 
-# Welcome new or returning members with a custom image
+# Welcome new members with a custom image
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for new_member in update.message.new_chat_members:
-        user_name = new_member.full_name
+        user_name = new_member.full_name or "Unknown User"
         user_id = new_member.id
+        username = new_member.username or "No Username"
 
         # Fetch user profile photo
-        photos = await context.bot.get_user_profile_photos(user_id)
-        if photos.total_count > 0:
-            photo_file = await context.bot.get_file(photos.photos[0][0].file_id)
-            photo_bytes = await photo_file.download_as_bytearray()
-            user_photo = Image.open(io.BytesIO(photo_bytes))
-        else:
+        try:
+            photos = await context.bot.get_user_profile_photos(user_id)
+            if photos.total_count > 0:
+                photo_file = await context.bot.get_file(photos.photos[0][0].file_id)
+                photo_bytes = await photo_file.download_as_bytearray()
+                user_photo = Image.open(io.BytesIO(photo_bytes))
+            else:
+                user_photo = Image.new("RGB", (200, 200), (128, 128, 128))  # Default gray
+        except Exception as e:
+            print(f"Error fetching profile photo: {e}")
             user_photo = Image.new("RGB", (200, 200), (128, 128, 128))  # Default gray
 
-        # Create a rectangular background
-        background = Image.new("RGB", (800, 400), (30, 144, 255))  # Blue background
+        # Create a rectangular white background
+        background = Image.new("RGB", (400, 500), "white")
         draw = ImageDraw.Draw(background)
 
-        # Paste circular user DP
+        # Circular mask for user DP
         user_photo = user_photo.resize((200, 200)).convert("RGBA")
         mask = Image.new("L", user_photo.size, 0)
         draw_mask = ImageDraw.Draw(mask)
         draw_mask.ellipse((0, 0) + user_photo.size, fill=255)
-        background.paste(user_photo, (50, 100), mask)
+        background.paste(user_photo, (100, 50), mask)
 
-        # Add user name and ID
-        font = ImageFont.truetype("arial.ttf", 24)  # Replace with valid font path if necessary
-        draw.text((300, 150), f"Welcome, {user_name}!", fill="white", font=font)
-        draw.text((300, 200), f"User ID: {user_id}", fill="white", font=font)
+        # Add username and ID below the photo
+        try:
+            font = ImageFont.truetype(random.choice(["arial.ttf", "times.ttf", "calibri.ttf"]), 24)
+        except IOError:
+            font = ImageFont.load_default()
 
-        # Save image to bytes
+        text = f"Welcome, {user_name}!\nID: {user_id}\nUsername: @{username}"
+        draw.text((50, 300), text, fill="black", font=font, align="center")
+
+        # Save the image to bytes
         output = io.BytesIO()
         background.save(output, format="PNG")
         output.seek(0)
 
-        # Send the image
-        await context.bot.send_photo(
-            chat_id=update.message.chat_id,
-            photo=output,
-            caption=f"Welcome to the group, {user_name}!"
-        )
+        # Send the generated image to the group
+        try:
+            await context.bot.send_photo(
+                chat_id=update.message.chat_id,
+                photo=output,
+                caption=f"Welcome to the group, {user_name}!"
+            )
+        except Exception as e:
+            print(f"Error sending welcome image: {e}")
 
 # IMDb information fetcher with "Download Now" button
 async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
