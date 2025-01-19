@@ -143,7 +143,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         poster_url = data.get("Poster")
         download_button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Download Now(PREMIUM Only)💛", url="https://telegra.ph/SORRY-You-are-not-premium-user-01-07")]]
+            [[InlineKeyboardButton("𝗕𝗨𝗬 𝗣𝗥𝗘𝗠𝗜𝗨𝗠💛", url="https://telegra.ph/SORRY-You-are-not-premium-user-01-07")]]
         )
 
         if poster_url != "N/A":
