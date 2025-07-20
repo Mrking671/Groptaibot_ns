@@ -19,7 +19,7 @@ IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyB4pvkedwMTVVjPp-OzbmTL8SgVJILBI8M")
 
 # Set the group or channel chat id where suggestions should be posted
-CHAT_ID = int(os.getenv("CHAT_ID", "-100xxxxxxxxxx"))  # fill with real chat id
+CHAT_ID = int(os.getenv("CHAT_ID", "-1001878181555"))  # fill with real chat id
 
 # Download links
 FREE_DOWNLOAD_LINK = "https://your-free-download-link.com"
