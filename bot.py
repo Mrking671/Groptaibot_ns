@@ -12,12 +12,12 @@ import io
 from bs4 import BeautifulSoup
 import difflib
 
-# Set up your Gemini API KEY (secure here, so not environment var)
+# Set Gemini API Key directly here
 GEMINI_API_KEY = "AIzaSyAt26gU1ZOOuy5atbSOAzrfrpIfSuFvnnY"
 IMDB_API_KEY = os.getenv("IMDB_API_KEY", "f054c7d2")  # or your key
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Set your Telegram bot token!
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-CHAT_ID = int(os.getenv("CHAT_ID", "-1001878181555"))  # For suggestions
+CHAT_ID = int(os.getenv("CHAT_ID", "-1001234567890"))  # For suggestions
 
 FREE_DOWNLOAD_LINK = "https://your-free-download-link.com"
 PAID_DOWNLOAD_LINK = "https://your-paid-download-link.com"
@@ -31,7 +31,6 @@ def gemini_complete(prompt: str) -> str:
             model="gemini-2.5-flash",
             contents=prompt
         )
-        # Return .text, .candidates[0]?.text or .result
         return getattr(response, "text", None) or getattr(response, "result", None) or str(response)
     except Exception as e:
         print(f"Gemini API error: {e}")
@@ -191,7 +190,7 @@ async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"⭐ *IMDb Rating*: {data2.get('imdbRating', '-')}\n"
                     f"🎭 *Genre*: {data2.get('Genre', '-')}\n"
                     f"📝 *Plot*: {data2.get('Plot', '-')}\n\n"
-                    f"{gemini_complete(f'In 2 lines, tell about {data2.get('Title', corrected)}')}"
+                    f"{gemini_complete(f'In 2 lines, tell about {data2.get(\"Title\", corrected)}')}"
                 )
             else:
                 ai_text = None
