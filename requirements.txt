@@ -4,4 +4,4 @@ google-generativeai
 langdetect
 Pillow >=10.0.0
 beautifulsoup4
-
+google-genai
