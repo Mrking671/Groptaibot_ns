@@ -1,5 +1,3 @@
-        "
-async def 
 import os
 import requests
 import google.generativeai as genai
@@ -19,10 +17,10 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 IMDB_API_KEY = os.getenv("IMDB_API_KEY")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-WELCOME_IMAGE_URL = "{YOUR_IMAGE_URL}"
-SERVER1_LINK = "{YOUR_SERVER1_LINK}"
-SERVER2_LINK = "{YOUR_SERVER2_LINK}"
-ADMIN_USERNAME = "{ADMIN_USERNAME}"
+WELCOME_IMAGE_URL = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
+SERVER1_LINK = "https://movi-l.netlify.app/"
+SERVER2_LINK = "https://movii-l.vercel.app/"
+ADMIN_USERNAME = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100  # Adjust time window as desired
 
 genai.configure(api_key=GEMINI_API_KEY)
