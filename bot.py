@@ -1,199 +1,228 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import requests
-import google.generativeai as genai
+from datetime import datetime
+from io import BytesIO
+from PIL import Image
+
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReactionTypeEmoji,
+    constants,
 )
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
 )
-from datetime import datetime
-from PIL import Image
-from io import BytesIO
 
-# -----------------🔐 CONFIG ----------------------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-IMDB_API_KEY = os.getenv("IMDB_API_KEY")
-TMDB_API_KEY = os.getenv("TMDB_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# ────────────────────🔐  CONFIG ────────────────────
+BOT_TOKEN        = os.getenv("BOT_TOKEN")
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")
+IMDB_API_KEY     = os.getenv("IMDB_API_KEY")
+TMDB_API_KEY     = os.getenv("TMDB_API_KEY")
 
-# Replace these with your data
 WELCOME_IMAGE_URL = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
-SERVER1_LINK = "https://movii-l.vercel.app/"
-SERVER2_LINK = "https://movi-l.netlify.app/"
-ADMIN_USERNAME = "Lordsakunaa"
+SERVER1_LINK      = "https://movii-l.vercel.app/"
+SERVER2_LINK      = "https://movi-l.netlify.app/"
+ADMIN_USERNAME    = "Lordsakunaa"
 
 AUTO_DELETE_SECONDS = 100
-DEFAULT_REGION = "IN"  # Use "US" for United States, etc.
+DEFAULT_REGION      = "IN"  # change to "US", "GB", etc.
 
-# -----------------🧠 MODELS ----------------------
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+# Emoji reactions to add
+REACTIONS = ["❤️", "😂", "😘", "😍", "😊", "😁"]
 
-# -----------------💬  UTILITIES ----------------------
-def get_greeting():
-    hour = datetime.now().hour
-    if 5 <= hour < 12: return "Good morning"
-    elif 12 <= hour < 18: return "Good afternoon"
-    elif 18 <= hour < 22: return "Good evening"
-    else: return "Good night"
+# ────────────────────🛠  HELPERS ────────────────────
+def greeting() -> str:
+    h = datetime.now().hour
+    if 5 <= h < 12: return "Good morning"
+    if 12 <= h < 18: return "Good afternoon"
+    if 18 <= h < 22: return "Good evening"
+    return "Good night"
 
-def get_trailer_url(movie_id):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?api_key={TMDB_API_KEY}"
-    res = requests.get(url).json()
-    for vid in res.get('results', []):
-        if vid['type'].lower() == "trailer" and vid['site'].lower() == "youtube":
-            return f"https://www.youtube.com/watch?v={vid['key']}"
+def get_trailer(tmdb_id: int) -> str | None:
+    resp = requests.get(
+        f"https://api.themoviedb.org/3/movie/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
+    ).json().get("results", [])
+    for v in resp:
+        if v["site"].lower()=="youtube" and v["type"].lower()=="trailer":
+            return f"https://www.youtube.com/watch?v={v['key']}"
     return None
 
-def get_streaming_platforms(movie_id):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}/watch/providers?api_key={TMDB_API_KEY}"
-    res = requests.get(url).json()
-    platforms = res.get('results', {}).get(DEFAULT_REGION, {}).get('flatrate', [])
-    if platforms:
-        return [p['provider_name'] for p in platforms]
-    return []
+def get_platforms(tmdb_id: int) -> list[str]:
+    data = requests.get(
+        f"https://api.themoviedb.org/3/movie/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
+    ).json().get("results", {}).get(DEFAULT_REGION, {})
+    return [p["provider_name"] for p in data.get("flatrate", [])]
 
-def create_buttons(trailer_url):
-    buttons = []
-    if trailer_url:
-        buttons.append([InlineKeyboardButton("▶️ Watch Trailer", url=trailer_url)])
-    download_row = [
-        InlineKeyboardButton("📥 Server 1", url=SERVER1_LINK),
-        InlineKeyboardButton("📥 Server 2", url=SERVER2_LINK)
-    ]
-    buttons.append(download_row)
-    return InlineKeyboardMarkup(buttons)
-
-def stylized_movie_ui(data: dict, platforms: list):
-    title = data.get("Title") or data.get("title") or "-"
-    year = data.get("Year") or data.get("release_date", "-")[:4]
-    rating = data.get("imdbRating") or data.get("vote_average", '-')
-    genre = data.get("Genre") or ", ".join([g.get("name") for g in data.get("genres", [])])
-    director = data.get("Director") or "-"
-    plot = data.get("Plot") or data.get("overview", "-")
-    cast = data.get("Actors") or "-"
-    
-    msg = (
-        f"🎬 <b><u>{title.upper()}</u></b>\n"
-        f"┏━━━━━━━━━━━━━━━━━━\n"
-        f"┃ <b>Year:</b> {year}\n"
-        f"┃ <b>IMDb:</b> ⭐ {rating}\n"
-        f"┃ <b>Genre:</b> {genre}\n"
-        f"┃ <b>Director:</b> {director}\n"
-        f"┗━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b>📝 Plot:</b>\n<em>{plot}</em>\n"
-    )
-
-    if cast and cast != "-":
-        msg += f"\n<b>🎞️ Cast:</b> {cast}\n"
-
-    if platforms:
-        msg += f"\n<b>📺 Streaming On:</b> {', '.join(platforms)}"
-
-    return msg
-
-def delete_message_later(context: ContextTypes.DEFAULT_TYPE):
-    job_data = context.job.data
-    message = job_data.get("message")
+def crop_16_9(url: str) -> BytesIO | str:
     try:
-        if message:
-            message.delete()
-    except Exception:
+        im = Image.open(BytesIO(requests.get(url).content))
+        w,h = im.size
+        nh = int(w*9/16)
+        if h>nh:
+            top=(h-nh)//2
+            im=im.crop((0,top,w,top+nh))
+        buf=BytesIO(); im.save(buf,"PNG"); buf.seek(0)
+        return buf
+    except:
+        return url
+
+async def delete_later(context: ContextTypes.DEFAULT_TYPE):
+    msg = context.job.data.get("msg")
+    try:
+        await msg.delete()
+    except:
         pass
 
-# -----------------🤖 HANDLERS ----------------------
+def build_caption(info: dict, platforms: list[str]) -> str:
+    t   = info.get("Title") or info.get("title","-")
+    yr  = (info.get("Year") or info.get("release_date","-"))[:4]
+    rt  = info.get("imdbRating") or info.get("vote_average","-")
+    gn  = info.get("Genre") or ", ".join([g["name"] for g in info.get("genres",[])])
+    dr  = info.get("Director") or "-"
+    pl  = info.get("Plot") or info.get("overview","-")
+    ca  = info.get("Actors") or "-"
 
+    cap = (
+        f"🎬 <b><u>{t.upper()}</u></b>\n"
+        f"┏━━━━━━━━━━━━━━━━━━\n"
+        f"┃ <b>Year:</b> {yr}\n"
+        f"┃ <b>IMDb:</b> ⭐ {rt}\n"
+        f"┃ <b>Genre:</b> {gn}\n"
+        f"┃ <b>Director:</b> {dr}\n"
+        f"┗━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>📝 Plot:</b>\n<em>{pl}</em>\n"
+    )
+    if ca!="-":
+        cap += f"\n<b>🎞️ Cast:</b> {ca}\n"
+    if platforms:
+        cap += f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
+    return cap
+
+def build_buttons(trailer: str|None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if trailer:
+        rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=trailer)])
+    rows.append([
+        InlineKeyboardButton("📥 Server 1", url=SERVER1_LINK),
+        InlineKeyboardButton("📥 Server 2", url=SERVER2_LINK)
+    ])
+    return InlineKeyboardMarkup(rows)
+
+# ────────────────────🤖  HANDLERS ────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    greet = get_greeting()
-    name = user.first_name or "there"
-
-    text = (
-        f"{greet}, <b>{name}</b>! 🎬\n\n"
-        f"I'm your AI Movie Assistant 👋 Find movies, trailers, platforms and links instantly!\n\n"
+    name = update.effective_user.first_name or "there"
+    txt = (
+        f"{greeting()}, <b>{name}</b>! 🎬\n\n"
+        "I’m your AI Movie Assistant. Send a title to get details,\n"
+        "trailer, streaming info & download links.\n\n"
         f"<i>Made with ❤️ by</i> @{ADMIN_USERNAME}"
     )
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎬 Trending Movies", callback_data="trending_movies")],
-        [InlineKeyboardButton("📥 Download Server 1", url=SERVER1_LINK)],
-        [InlineKeyboardButton("📥 Download Server 2", url=SERVER2_LINK)],
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎬 Trending Movies", callback_data="trending")],
+        [InlineKeyboardButton("📥 Server 1", url=SERVER1_LINK)],
+        [InlineKeyboardButton("📥 Server 2", url=SERVER2_LINK)],
         [InlineKeyboardButton("👤 Admin Support", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
-    msg = await update.message.reply_photo(WELCOME_IMAGE_URL, caption=text, parse_mode="HTML", reply_markup=buttons)
-    context.job_queue.run_once(delete_message_later, AUTO_DELETE_SECONDS, data={"message": msg})
+    sent = await update.message.reply_photo(
+        WELCOME_IMAGE_URL, caption=txt, parse_mode=constants.ParseMode.HTML, reply_markup=kb
+    )
+    context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": sent})
 
-async def fetch_movie_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    # Step 1: Try IMDb (OMDb)
-    omdb_url = f"http://www.omdbapi.com/?t={text}&apikey={IMDB_API_KEY}"
-    omdb_data = requests.get(omdb_url).json()
-    if omdb_data.get("Response") == "True":
-        msg = stylized_movie_ui(omdb_data, [])
-        poster = omdb_data.get("Poster")
-        kb = create_buttons(None)
+async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    data = requests.get(
+        f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
+    ).json().get("results", [])[:5]
+    txt = "<b>🔥 Trending Movies:</b>\n"
+    for i,m in enumerate(data,1):
+        txt += f"<b>{i}.</b> {m['title']} ({m.get('release_date','')[:4]})\n"
+    sent = await update.callback_query.message.reply_text(txt, parse_mode="HTML")
+    context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": sent})
+
+async def react(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message: return
+    try:
+        await context.bot.set_message_reaction(
+            chat_id=update.message.chat_id,
+            message_id=update.message.message_id,
+            reaction=[ReactionTypeEmoji(e) for e in REACTIONS]
+        )
+    except:
+        pass
+
+async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await react(update, context)
+    q = update.message.text.strip()
+    omdb = requests.get(f"http://www.omdbapi.com/?t={q}&apikey={IMDB_API_KEY}").json()
+    if omdb.get("Response")=="True":
+        info = omdb; tmdb_id = None
+        trailer = None; platforms=[]
+        poster = omdb.get("Poster") if omdb.get("Poster")!="N/A" else None
     else:
-        # Step 2: Fallback to TMDb
-        search = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={text}"
-        res = requests.get(search).json().get("results", [])
-        if not res:
-            msg = "❗ Movie not found.\nPlease check your spelling.\nYou can try Google search:"
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔍 Search Google", url=f"https://www.google.com/search?q={text}")]
-            ])
-            m = await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
-            context.job_queue.run_once(delete_message_later, AUTO_DELETE_SECONDS, data={"message": m})
+        sr = requests.get(
+            f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={q}"
+        ).json().get("results", [])
+        if not sr:
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "🔍 Try Google",
+                    url=f"https://www.google.com/search?q={q.replace(' ','+')}"
+                )
+            ]])
+            sent = await update.message.reply_text(
+                "❗ Movie not found. Check spelling.", reply_markup=kb
+            )
+            context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": sent})
             return
+        tmdb_id = sr[0]["id"]
+        details = requests.get(
+            f"https://api.themoviedb.org/3/movie/{tmdb_id}"
+            f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+        ).json()
+        trailer   = get_trailer(tmdb_id)
+        platforms = get_platforms(tmdb_id)
+        info      = details
+        poster    = (
+            f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}"
+            if details.get("backdrop_path") else None
+        )
 
-        mid = res[0].get("id")
-        details = requests.get(f"https://api.themoviedb.org/3/movie/{mid}?api_key={TMDB_API_KEY}&append_to_response=credits").json()
-        trailer_url = get_trailer_url(mid)
-        platforms = get_streaming_platforms(mid)
-        msg = stylized_movie_ui(details, platforms)
-        poster = f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None
-        kb = create_buttons(trailer_url)
-
-    if poster and poster != "N/A":
-        try:
-            img = BytesIO(requests.get(poster).content)
-            m = await update.message.reply_photo(photo=img, caption=msg, parse_mode="HTML", reply_markup=kb)
-        except:
-            m = await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
+    cap = build_caption(info, platforms)
+    kb  = build_buttons(trailer)
+    if poster:
+        img = crop_16_9(poster)
+        sent = await update.message.reply_photo(
+            img, caption=cap, parse_mode="HTML", reply_markup=kb
+        )
     else:
-        m = await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kb)
+        sent = await update.message.reply_text(
+            cap, parse_mode="HTML", reply_markup=kb
+        )
+    context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": sent})
 
-    context.job_queue.run_once(delete_message_later, AUTO_DELETE_SECONDS, data={"message": m})
-
-async def trending_movies_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    url = f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
-    data = requests.get(url).json()
-    results = data.get("results", [])[:5]
-    text = "<b>🔥 Trending Today:</b>\n"
-    for i, movie in enumerate(results, 1):
-        title = movie.get("title")
-        year = movie.get("release_date", "")[:4]
-        text += f"<b>{i}.</b> {title} ({year})\n"
-    msg = await query.message.reply_text(text, parse_mode="HTML")
-    context.job_queue.run_once(delete_message_later, AUTO_DELETE_SECONDS, data={"message": msg})
-
-# -----------------🚀 MAIN ----------------------
-
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+# ────────────────────🚀  MAIN ────────────────────────────
+def main() -> None:
+    app = Application.builder().token(BOT_TOKEN).parse_mode("HTML").build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(trending_movies_callback, pattern="^trending_movies$"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), fetch_movie_info))
+    app.add_handler(CallbackQueryHandler(trending_cb, pattern="^trending$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, movie_search))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, start))
     app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000)),
+        port=int(os.getenv("PORT", 10000)),
         url_path=BOT_TOKEN,
         webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}"
     )
 
 if __name__ == "__main__":
     main()
-          
