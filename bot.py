@@ -103,8 +103,8 @@ def build_buttons(trailer: str | None) -> InlineKeyboardMarkup:
     if trailer:
         rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=trailer)])
     rows.append([
-        InlineKeyboardButton("📥 Server 1", url=SERVER1_LINK),
-        InlineKeyboardButton("📥 Server 2", url=SERVER2_LINK)
+        InlineKeyboardButton("📥 720p HD", url=SERVER1_LINK),
+        InlineKeyboardButton("📥 1080p HD", url=SERVER2_LINK)
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -118,10 +118,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<i>Made with ❤️ by</i> @{ADMIN_USERNAME}"
     )
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎬 Trending Movies", callback_data="trending")],
-        [InlineKeyboardButton("📥 Server 1", url=SERVER1_LINK)],
-        [InlineKeyboardButton("📥 Server 2", url=SERVER2_LINK)],
-        [InlineKeyboardButton("👤 Admin Support", url=f"https://t.me/{ADMIN_USERNAME}")]
+        [InlineKeyboardButton("🎬 ᴛʀᴇɴᴅɪɴɢ", callback_data="trending")],
+        [InlineKeyboardButton("📥 ᴍᴏᴠɪᴇs", url=SERVER1_LINK)],
+        [InlineKeyboardButton("📥 sᴇʀɪᴇs", url=SERVER2_LINK)],
+        [InlineKeyboardButton("👤 ʜᴇʟᴘ", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     msg = await update.message.reply_photo(
         WELCOME_IMAGE_URL,
@@ -136,7 +136,7 @@ async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = requests.get(
         f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
     ).json().get("results", [])[:5]
-    text = "<b>🔥 Trending Movies:</b>\n"
+    text = "<b>🔥 Trending Movies:</b>\n\n"
     for i, m in enumerate(results, start=1):
         text += f"<b>{i}.</b> {m['title']} ({m.get('release_date','')[:4]})\n"
     msg = await update.callback_query.message.reply_text(text, parse_mode=constants.ParseMode.HTML)
