@@ -69,11 +69,10 @@ def stylized_movie_ui(data, poster_url, server1, server2):
     ui = f"{top}{more}{mid}{castblock}"
     # Add Chrome direct link as a separate button
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📥 Download: Server 1", url=server1)],
-        [InlineKeyboardButton("📥 Download: Server 1 (Chrome)", url=f"googlechrome://navigate?url={server1}")],
-        [InlineKeyboardButton("📥 Download: Server 2", url=server2)],
-        [InlineKeyboardButton("📥 Download: Server 2 (Chrome)", url=f"googlechrome://navigate?url={server2}")]
-    ])
+    [InlineKeyboardButton("📥 Download: Server 1", url=server1)],
+    [InlineKeyboardButton("📥 Download: Server 2", url=server2)]
+])
+
     return ui, poster_url, buttons
 
 def search_tmdb(movie_name):
