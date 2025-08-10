@@ -36,7 +36,7 @@ DEFAULT_REGION      = "IN"  # Change to your region code
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
 db      = client.get_default_database()
-movies  = db["movies"]
+movies  = db["movie"]
 tvshows = db["tv"]
 
 # ──────────────────── HELPERS ────────────────────
@@ -115,7 +115,7 @@ def get_media_link(title: str) -> str:
     # check tv collection
     doc = tvshows.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
     if doc:
-        return f"{FRONTEND_URL}/tv/{doc['tmdb_id']}"
+        return f"{FRONTEND_URL}/ser/{doc['tmdb_id']}"
     # fallback
     return FRONTEND_URL
 
