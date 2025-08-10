@@ -3,6 +3,7 @@ import requests
 from datetime import datetime
 from io import BytesIO
 from PIL import Image
+from pymongo import MongoClient
 
 from telegram import (
     Update,
@@ -24,12 +25,19 @@ BOT_TOKEN          = os.getenv("BOT_TOKEN")
 WEBHOOK_URL        = os.getenv("WEBHOOK_URL")
 IMDB_API_KEY       = os.getenv("IMDB_API_KEY")
 TMDB_API_KEY       = os.getenv("TMDB_API_KEY")
+MONGO_URI          = os.getenv("MONGO_URI")
+FRONTEND_URL       = "https://frontend-flyvio.vercel.app"
+TUTORIAL_LINK      = "https://your-tutorial-url.com"  # Replace with your actual tutorial link
 WELCOME_IMAGE_URL  = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
-SERVER1_LINK       = "https://movii-l.vercel.app/"
-SERVER2_LINK       = "https://movi-l.netlify.app/"
 ADMIN_USERNAME     = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100
 DEFAULT_REGION      = "IN"  # Change to your region code
+
+# ──────────────────── DATABASE ────────────────────
+client = MongoClient(MONGO_URI)
+db      = client.get_default_database()
+movies  = db["movies"]
+tvshows = db["tv"]
 
 # ──────────────────── HELPERS ────────────────────
 def greeting() -> str:
@@ -98,14 +106,28 @@ def build_caption(info: dict, platforms: list[str]) -> str:
         caption += f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
     return caption
 
-def build_buttons(trailer: str | None) -> InlineKeyboardMarkup:
+def get_media_link(title: str) -> str:
+    """Return a frontend URL based on MongoDB match; otherwise base URL."""
+    # exact (case-insensitive) title match in movies
+    doc = movies.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
+    if doc:
+        return f"{FRONTEND_URL}/mov/{doc['tmdb_id']}"
+    # check tv collection
+    doc = tvshows.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
+    if doc:
+        return f"{FRONTEND_URL}/tv/{doc['tmdb_id']}"
+    # fallback
+    return FRONTEND_URL
+
+def build_buttons(trailer: str | None, dl_link: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if trailer:
         rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=trailer)])
     rows.append([
-        InlineKeyboardButton("📥 720p HD", url=SERVER1_LINK),
-        InlineKeyboardButton("📥 1080p HD", url=SERVER2_LINK)
+        InlineKeyboardButton("📥 720p HD", url=dl_link),
+        InlineKeyboardButton("📥 1080p HD", url=dl_link),
     ])
+    rows.append([InlineKeyboardButton("📚 Tutorial", url=TUTORIAL_LINK)])
     return InlineKeyboardMarkup(rows)
 
 # ──────────────────── HANDLERS ────────────────────
@@ -119,8 +141,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎬 ᴛʀᴇɴᴅɪɴɢ", callback_data="trending")],
-        [InlineKeyboardButton("📥 ᴍᴏᴠɪᴇs", url=SERVER1_LINK)],
-        [InlineKeyboardButton("📥 sᴇʀɪᴇs", url=SERVER2_LINK)],
         [InlineKeyboardButton("👤 ʜᴇʟᴘ", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     msg = await update.message.reply_photo(
@@ -187,7 +207,8 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     caption = build_caption(info, platforms)
-    buttons = build_buttons(trailer)
+    dl_link = get_media_link(info.get("title") or info.get("Title", ""))
+    buttons = build_buttons(trailer, dl_link)
 
     if poster:
         img_msg = crop_16_9(poster)
@@ -209,12 +230,10 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ──────────────────── MAIN ────────────────────
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(trending_cb, pattern="^trending$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, movie_search))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, start))
-
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
