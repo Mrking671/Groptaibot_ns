@@ -31,18 +31,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ────────────────────🔐 CONFIG ────────────────────
-BOT_TOKEN          = os.getenv("BOT_TOKEN")
-WEBHOOK_URL        = os.getenv("WEBHOOK_URL")
-IMDB_API_KEY       = os.getenv("IMDB_API_KEY")
-TMDB_API_KEY       = os.getenv("TMDB_API_KEY")
-MONGO_URI          = os.getenv("MONGO_URI")
-FRONTEND_URL       = "https://frontend-flyvio.vercel.app"
-TUTORIAL_LINK      = "https://your-tutorial-url.com"
-WELCOME_IMAGE_URL  = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
-ADMIN_USERNAME     = "Lordsakunaa"
+BOT_TOKEN           = os.getenv("BOT_TOKEN")
+WEBHOOK_URL         = os.getenv("WEBHOOK_URL")
+IMDB_API_KEY        = os.getenv("IMDB_API_KEY")
+TMDB_API_KEY        = os.getenv("TMDB_API_KEY")
+MONGO_URI           = os.getenv("MONGO_URI")
+FRONTEND_URL        = "https://frontend-flyvio.vercel.app"
+TUTORIAL_LINK       = "https://your-tutorial-url.com"
+WELCOME_IMAGE_URL   = "https://ar-hosting.pages.dev/1755088270275.png"
+ADMIN_USERNAME      = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100
 DEFAULT_REGION      = "IN"
 REDIRECTION_PREFIX  = "https://redirection2.vercel.app/?url="
+
+# Parse multiple chat IDs from environment (comma separated)
+TARGET_CHAT_IDS = [
+    int(cid.strip())
+    for cid in os.getenv("TARGET_CHAT_IDS", "").split(",")
+    if cid.strip().isdigit()
+]
 
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
@@ -50,37 +57,37 @@ db      = client.get_default_database()
 movies  = db["movie"]
 tvshows = db["tv"]
 
-# Memory for avoiding repeats in 10min job
+# Memory for avoiding repeats
 recently_posted_ids = []
 
 # ──────────────────── HELPERS ────────────────────
-def greeting() -> str:
+def greeting():
     h = datetime.now().hour
     if 5 <= h < 12: return "Good morning"
     if 12 <= h < 18: return "Good afternoon"
     if 18 <= h < 22: return "Good evening"
     return "Good night"
 
-def get_trailer(tmdb_id: int) -> str | None:
+def get_trailer(tmdb_id: int):
     try:
         url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
         for v in requests.get(url).json().get("results", []):
             if v["site"].lower() == "youtube" and v["type"].lower() == "trailer":
                 return f"https://www.youtube.com/watch?v={v['key']}"
     except Exception:
-        logger.exception(f"Error getting trailer for TMDB ID {tmdb_id}")
+        logger.exception(f"Error getting trailer for TMDB {tmdb_id}")
     return None
 
-def get_platforms(tmdb_id: int) -> list[str]:
+def get_platforms(tmdb_id: int):
     try:
         url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
         data = requests.get(url).json().get("results", {}).get(DEFAULT_REGION, {})
         return [p["provider_name"] for p in data.get("flatrate", [])]
     except Exception:
-        logger.exception(f"Error getting platforms for TMDB ID {tmdb_id}")
+        logger.exception(f"Error getting platforms for TMDB {tmdb_id}")
         return []
 
-def crop_16_9(url: str) -> BytesIO | str:
+def crop_16_9(url: str):
     try:
         img = Image.open(BytesIO(requests.get(url).content))
         w, h = img.size
@@ -93,26 +100,25 @@ def crop_16_9(url: str) -> BytesIO | str:
         buf.seek(0)
         return buf
     except Exception:
-        logger.exception(f"Error cropping image from URL {url}")
+        logger.exception(f"Error cropping image {url}")
         return url
 
 async def delete_later(context: ContextTypes.DEFAULT_TYPE):
-    msg = context.job.data.get("msg")
     try:
-        await msg.delete()
-        logger.info("Deleted message automatically after timeout.")
-    except Exception:
-        logger.warning("Failed to delete message (possibly already deleted).")
+        await context.job.data.get("msg").delete()
+        logger.info("Auto-deleted message.")
+    except:
+        logger.warning("Failed to auto-delete message.")
 
-def build_caption(info: dict, platforms: list[str]) -> str:
+def build_caption(info: dict, platforms: list[str]):
     try:
-        title    = info.get("Title") or info.get("title", "-")
-        year     = (info.get("Year") or info.get("release_date", "-"))[:4]
-        rating   = info.get("imdbRating") or info.get("vote_average", "-")
-        genre    = info.get("Genre") or ", ".join(g["name"] for g in info.get("genres", []))
+        title = info.get("Title") or info.get("title", "-")
+        year = (info.get("Year") or info.get("release_date", "-"))[:4]
+        rating = info.get("imdbRating") or info.get("vote_average", "-")
+        genre = info.get("Genre") or ", ".join(g["name"] for g in info.get("genres", []))
         director = info.get("Director") or "-"
-        plot     = info.get("Plot") or info.get("overview", "-")
-        cast     = info.get("Actors") or "-"
+        plot = info.get("Plot") or info.get("overview", "-")
+        cast = info.get("Actors") or "-"
 
         caption = (
             f"🎬 <b><u>{title.upper()}</u></b>\n"
@@ -133,21 +139,19 @@ def build_caption(info: dict, platforms: list[str]) -> str:
         logger.exception("Error building caption")
         return "Error generating caption."
 
-def get_media_link(title: str) -> str:
+def get_media_link(title: str):
     try:
-        doc = movies.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
-        if doc:
-            return f"{FRONTEND_URL}/mov/{doc['tmdb_id']}"
-        doc = tvshows.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
-        if doc:
-            return f"{FRONTEND_URL}/ser/{doc['tmdb_id']}"
+        m = movies.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
+        if m: return f"{FRONTEND_URL}/mov/{m['tmdb_id']}"
+        t = tvshows.find_one({"title": {"$regex": f"^{title}$", "$options": "i"}})
+        if t: return f"{FRONTEND_URL}/ser/{t['tmdb_id']}"
     except Exception:
-        logger.exception(f"Error getting media link for title {title}")
+        logger.exception(f"Error finding media link for {title}")
     return FRONTEND_URL
 
-def build_buttons(trailer: str | None, dl_link: str) -> InlineKeyboardMarkup:
+def build_buttons(trailer: str | None, dl_link: str):
     try:
-        rows: list[list[InlineKeyboardButton]] = []
+        rows = []
         if trailer:
             rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=REDIRECTION_PREFIX + trailer)])
         rows.append([
@@ -157,7 +161,7 @@ def build_buttons(trailer: str | None, dl_link: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton("📚 Tutorial", url=TUTORIAL_LINK)])
         return InlineKeyboardMarkup(rows)
     except Exception:
-        logger.exception("Error building buttons.")
+        logger.exception("Error building buttons")
         return InlineKeyboardMarkup([])
 
 # ──────────────────── PERIODIC JOB ────────────────────
@@ -169,40 +173,36 @@ async def send_latest_media_job(context: ContextTypes.DEFAULT_TYPE):
         latest_tv = list(tvshows.find().sort("uploaded_at", -1).limit(20))
         combined = latest_movies + latest_tv
         if not combined:
-            logger.warning("No media found in MongoDB to post.")
+            logger.warning("No media found in DB.")
             return
 
-        candidates = [doc for doc in combined if str(doc.get("_id")) not in recently_posted_ids]
+        candidates = [doc for doc in combined if str(doc["_id"]) not in recently_posted_ids]
         if not candidates:
             recently_posted_ids = []
             candidates = combined
 
         chosen = random.choice(candidates)
-        recently_posted_ids.append(str(chosen.get("_id")))
+        recently_posted_ids.append(str(chosen["_id"]))
         if len(recently_posted_ids) > 50:
             recently_posted_ids = recently_posted_ids[-50:]
 
         tmdb_id = chosen.get("tmdb_id") or 0
         if chosen in latest_movies:
             details = requests.get(
-                f"https://api.themoviedb.org/3/movie/{tmdb_id}"
-                f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
             ).json()
-            info = details
             trailer = get_trailer(tmdb_id)
             platforms = get_platforms(tmdb_id)
         else:
             details = requests.get(
-                f"https://api.themoviedb.org/3/tv/{tmdb_id}"
-                f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+                f"https://api.themoviedb.org/3/tv/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
             ).json()
-            info = details
             trailer = None
             platforms = []
 
         poster = f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None
-        caption = build_caption(info, platforms)
-        dl_link = get_media_link(info.get("title") or info.get("Title", ""))
+        caption = build_caption(details, platforms)
+        dl_link = get_media_link(details.get("title") or details.get("name") or "")
         buttons = build_buttons(trailer, dl_link)
 
         if poster:
@@ -221,11 +221,10 @@ async def send_latest_media_job(context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=buttons
             )
 
-        # Auto delete
         context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
-        logger.info(f"Posted periodic media: {info.get('title') or info.get('name')}")
+        logger.info(f"Posted random media to chat {chat_id}")
     except Exception:
-        logger.exception("Error in periodic media job.")
+        logger.exception(f"Error posting to chat {chat_id}")
 
 # ──────────────────── HANDLERS ────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,7 +248,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
     except Exception:
-        logger.exception("Error in /start handler.")
+        logger.exception("Error in /start")
 
 async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -263,27 +262,24 @@ async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = await update.callback_query.message.reply_text(text, parse_mode=constants.ParseMode.HTML)
         context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
     except Exception:
-        logger.exception("Error in trending callback.")
+        logger.exception("Error in trending callback")
 
 async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.message.text.strip()
         omdb = requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}").json()
         if omdb.get("Response") == "True":
-            info      = omdb
-            trailer   = None
+            info = omdb
+            trailer = None
             platforms = []
-            poster    = omdb.get("Poster") if omdb.get("Poster") != "N/A" else None
+            poster = omdb.get("Poster") if omdb.get("Poster") != "N/A" else None
         else:
             search = requests.get(
                 f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
             ).json().get("results", [])
             if not search:
                 buttons = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
-                        "🔍 Try Google",
-                        url=f"https://www.google.com/search?q={query.replace(' ', '+')}"
-                    )
+                    InlineKeyboardButton("🔍 Try Google", url=f"https://www.google.com/search?q={query.replace(' ', '+')}")
                 ]])
                 msg = await update.message.reply_text(
                     "❗ Movie not found. Please check the spelling.",
@@ -292,41 +288,34 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
                 return
-
-            tmdb_id   = search[0]["id"]
-            details   = requests.get(
-                f"https://api.themoviedb.org/3/movie/{tmdb_id}"
-                f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+            tmdb_id = search[0]["id"]
+            info = requests.get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
             ).json()
-            trailer   = get_trailer(tmdb_id)
+            trailer = get_trailer(tmdb_id)
             platforms = get_platforms(tmdb_id)
-            info      = details
-            poster    = (
-                f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}"
-                if details.get("backdrop_path") else None
-            )
+            poster = f"https://image.tmdb.org/t/p/w780{info.get('backdrop_path')}" if info.get("backdrop_path") else None
 
         caption = build_caption(info, platforms)
         dl_link = get_media_link(info.get("title") or info.get("Title", ""))
         buttons = build_buttons(trailer, dl_link)
 
         if poster:
-            img_msg = await update.message.reply_photo(
+            msg = await update.message.reply_photo(
                 crop_16_9(poster),
                 caption=caption,
                 parse_mode=constants.ParseMode.HTML,
                 reply_markup=buttons
             )
         else:
-            img_msg = await update.message.reply_text(
+            msg = await update.message.reply_text(
                 caption,
                 parse_mode=constants.ParseMode.HTML,
                 reply_markup=buttons
             )
-
-        context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": img_msg})
+        context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
     except Exception:
-        logger.exception("Error in movie search handler.")
+        logger.exception("Error in movie search")
 
 # ──────────────────── MAIN ────────────────────
 def main():
@@ -339,8 +328,10 @@ def main():
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, movie_search))
         app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, start))
 
-        YOUR_CHAT_ID = int(os.getenv("TARGET_CHAT_ID", "-1001878181555"))
-        app.job_queue.run_repeating(send_latest_media_job, interval=600, first=10, chat_id=YOUR_CHAT_ID)
+        # Schedule 10-min job for each chat in TARGET_CHAT_IDS
+        for cid in TARGET_CHAT_IDS:
+            app.job_queue.run_repeating(send_latest_media_job, interval=600, first=10, chat_id=cid)
+            logger.info(f"Scheduled 10min job for chat {cid}")
 
         app.run_webhook(
             listen="0.0.0.0",
@@ -353,4 +344,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-           
