@@ -1,4 +1,5 @@
 import os
+import random
 import requests
 from datetime import datetime
 from io import BytesIO
@@ -32,6 +33,7 @@ WELCOME_IMAGE_URL  = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
 ADMIN_USERNAME     = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100
 DEFAULT_REGION      = "IN"  # Change to your region code
+REDIRECTION_PREFIX  = "https://redirection2.vercel.app/?url="
 
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
@@ -122,13 +124,91 @@ def get_media_link(title: str) -> str:
 def build_buttons(trailer: str | None, dl_link: str) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if trailer:
-        rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=trailer)])
+        rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=REDIRECTION_PREFIX + trailer)])
     rows.append([
-        InlineKeyboardButton("📥 720p HD", url=dl_link),
-        InlineKeyboardButton("📥 1080p HD", url=dl_link),
+        InlineKeyboardButton("📥 720p HD", url=REDIRECTION_PREFIX + dl_link),
+        InlineKeyboardButton("📥 1080p HD", url=REDIRECTION_PREFIX + dl_link),
     ])
-    rows.append([InlineKeyboardButton("📚 Tutorial", url=TUTORIAL_LINK)])
+    rows.append([InlineKeyboardButton("📚 Tutorial", url=TUTORIAL_LINK)])  # tutorial button without redirection
     return InlineKeyboardMarkup(rows)
+
+async def send_media_info(update_or_context, chat_id: int, info: dict, platforms: list[str], poster: str | None):
+    caption = build_caption(info, platforms)
+    dl_link = get_media_link(info.get("title") or info.get("Title", ""))
+    buttons = build_buttons(get_trailer(info.get("tmdb_id", 0) or 0), dl_link)
+
+    if hasattr(update_or_context, "bot"):  # ContextTypes.DEFAULT_TYPE
+        bot = update_or_context.bot
+    else:  # Update
+        bot = update_or_context._bot  # protected but works
+
+    if poster:
+        img_msg = crop_16_9(poster)
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=img_msg,
+            caption=caption,
+            parse_mode=constants.ParseMode.HTML,
+            reply_markup=buttons
+        )
+    else:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            parse_mode=constants.ParseMode.HTML,
+            reply_markup=buttons
+        )
+
+# ──────────────────── PERIODIC JOB ────────────────────
+async def send_latest_media_job(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    try:
+        latest_movie = movies.find_one(sort=[("uploaded_at", -1)])  # Assuming 'uploaded_at' field exists
+        latest_tv = tvshows.find_one(sort=[("uploaded_at", -1)])
+
+        # Choose randomly between movie or tv if both exist
+        candidates = [media for media in [latest_movie, latest_tv] if media]
+        if not candidates:
+            return  # Nothing to send
+
+        chosen = random.choice(candidates)
+        title = chosen.get("title") or chosen.get("Title")
+        tmdb_id = chosen.get("tmdb_id") or 0
+
+        info = None
+        platforms = []
+        poster = None
+        trailer = None
+
+        # Fetch details based on whether it's movie or TV
+        # We identify by existence in movies or tv collection
+        if chosen in [latest_movie]:
+            # Try to fetch fresh details from TMDb API
+            details = requests.get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}"
+                f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+            ).json()
+            info = details
+            trailer = get_trailer(tmdb_id)
+            platforms = get_platforms(tmdb_id)
+            poster = f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None
+
+        else:
+            # TV show details
+            details = requests.get(
+                f"https://api.themoviedb.org/3/tv/{tmdb_id}"
+                f"?api_key={TMDB_API_KEY}&append_to_response=credits"
+            ).json()
+            info = details
+            poster = f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None
+            # TMDb API doesn't have same trailer API for TV, use YouTube search or none
+            trailer = None
+            platforms = []  # No direct method for TV platforms here
+
+        await send_media_info(context, chat_id, info, platforms, poster)
+
+    except Exception as e:
+        print("Error in periodic media job:", e)
 
 # ──────────────────── HANDLERS ────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -234,6 +314,15 @@ def main():
     app.add_handler(CallbackQueryHandler(trending_cb, pattern="^trending$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, movie_search))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, start))
+
+    # Schedule job every 10 minutes, sending to a specific chat (change chat_id accordingly)
+    # For instance, you can send to ADMIN_USERNAME's chat or a group/channel chat_id
+    # Replace YOUR_CHAT_ID with the integer chat ID where you want the periodic message
+    YOUR_CHAT_ID = int(os.getenv("TARGET_CHAT_ID", "-1001878181555"))  # Put target chat ID here
+
+    # Run periodic job every 600 seconds = 10 minutes
+    app.job_queue.run_repeating(send_latest_media_job, interval=600, first=10, chat_id=YOUR_CHAT_ID)
+
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
@@ -243,3 +332,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+      
