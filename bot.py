@@ -47,7 +47,7 @@ REDIRECTION_PREFIX  = "https://redirection2.vercel.app/?url="
 # Parse multiple chat IDs from environment (comma separated)
 TARGET_CHAT_IDS = [
     int(cid.strip())
-    for cid in os.getenv("TARGET_CHAT_IDS", "").split(",")
+    for cid in os.getenv("TARGET_CHAT_IDS", "-1001878181555,-1001955515603,-1001675134770").split(",")
     if cid.strip().isdigit()
 ]
 
@@ -232,13 +232,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = update.effective_user.first_name or "there"
         text = (
             f"{greeting()}, <b>{name}</b>! 🎬\n\n"
-            "I’m your AI Movie Assistant. Send a movie title to get details,\n"
-            "trailers, streaming platforms & download links.\n\n"
-            f"<i>Made with ❤️ by</i> @{ADMIN_USERNAME}"
+            "ɪ ᴀᴍ ᴍᴏᴠɪ-ʟ ᴡᴇʙsɪᴛᴇ ᴍᴀɴᴀɢᴇʀ ʙᴏᴛ,\n"
+            "ᴛʏᴘᴇ ᴀɴʏ ᴍᴏᴠɪᴇ ɴᴀᴍᴇ ᴀɴᴅ sᴇᴇ ᴍᴀɢɪᴄ.\n\n"
+            f"<i>ᴍᴀᴅᴇ ᴡɪᴛʜ ❤️ ʙʏ 𝗕𝗟𝗔𝗖𝗞 𝗘𝗠𝗣𝗘𝗥𝗢𝗥. "
         )
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎬 ᴛʀᴇɴᴅɪɴɢ", callback_data="trending")],
-            [InlineKeyboardButton("👤 ʜᴇʟᴘ", url=f"https://t.me/{ADMIN_USERNAME}")]
+            [InlineKeyboardButton("🎬 ᴛʀᴇɴᴅɪɴɢ ᴛᴏᴅᴀʏ", callback_data="trending")],
+            [InlineKeyboardButton("ᴍᴏᴠɪ-ʟ ᴡᴇʙsɪᴛᴇ❤", url=f"https://redirection2.vercel.app/?url=https://frontend-flyvio.vercel.app/")]
         ])
         msg = await update.message.reply_photo(
             WELCOME_IMAGE_URL,
