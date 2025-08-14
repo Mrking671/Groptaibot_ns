@@ -29,7 +29,7 @@ TMDB_API_KEY       = os.getenv("TMDB_API_KEY")
 MONGO_URI          = os.getenv("MONGO_URI")
 FRONTEND_URL       = "https://frontend-flyvio.vercel.app"
 TUTORIAL_LINK      = "https://your-tutorial-url.com"  # Replace with your actual tutorial link
-WELCOME_IMAGE_URL  = "https://i.postimg.cc/t4cV2Hnz/image-4.png"
+WELCOME_IMAGE_URL  = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
 ADMIN_USERNAME     = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100
 DEFAULT_REGION      = "IN"  # Change to your region code
@@ -46,6 +46,9 @@ client = MongoClient(MONGO_URI)
 db      = client.get_default_database()
 movies  = db["movie"]
 tvshows = db["tv"]
+
+# To track posted movie IDs and avoid repetition
+posted_movie_ids = set()
 
 # ──────────────────── HELPERS ────────────────────
 def greeting() -> str:
@@ -240,32 +243,45 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 AUTO_POST_INTERVAL = 600  # 10 minutes in seconds
 
 async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
-    # Fetch 20 latest movies from TMDb now_playing endpoint
-    results = requests.get(
-        f"https://api.themoviedb.org/3/movie/now_playing?api_key={TMDB_API_KEY}&page=1"
-    ).json().get("results", [])
-    if not results:
-        return  # Nothing to post
-    
-    movie = random.choice(results[:20])
-    tmdb_id = movie["id"]
-    details = requests.get(
-        f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
-    ).json()
-    trailer   = get_trailer(tmdb_id)
-    platforms = get_platforms(tmdb_id)
-    caption   = build_caption(details, platforms)
-    dl_link   = get_media_link(details.get("title") or details.get("Title", ""))
-    buttons   = build_buttons(trailer, dl_link)
-    poster    = (
-        f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}"
-        if details.get("backdrop_path") else None
-    )
+    global posted_movie_ids
 
-    # Post to each target chat and schedule deletion
+    # Total number of movies in collection
+    count = movies.count_documents({})
+    if count == 0:
+        return  # No movies available
+
+    # Filter to exclude already posted movies
+    filter_query = {"_id": {"$nin": list(posted_movie_ids)}} if posted_movie_ids else {}
+
+    # Sample a random movie not posted yet
+    pipeline = [
+        {"$match": filter_query},
+        {"$sample": {"size": 1}}
+    ]
+    movie_list = list(movies.aggregate(pipeline))
+
+    if not movie_list:
+        # All movies posted, reset set and try again
+        posted_movie_ids.clear()
+        movie_list = list(movies.aggregate([{"$sample": {"size": 1}}]))
+
+    if not movie_list:
+        return  # Nothing to post after reset
+
+    movie = movie_list[0]
+    posted_movie_ids.add(movie["_id"])
+
+    tmdb_id = movie.get("tmdb_id")
+    trailer = get_trailer(tmdb_id) if tmdb_id else None
+    platforms = get_platforms(tmdb_id) if tmdb_id else []
+    caption = build_caption(movie, platforms)
+    dl_link = get_media_link(movie.get("title", ""))
+    buttons = build_buttons(trailer, dl_link)
+    poster_url = f"https://image.tmdb.org/t/p/w780{movie.get('backdrop_path')}" if movie.get("backdrop_path") else None
+
     for chat_id in TARGET_CHAT_IDS:
-        if poster:
-            img_msg = crop_16_9(poster)
+        if poster_url:
+            img_msg = crop_16_9(poster_url)
             msg = await context.bot.send_photo(
                 chat_id,
                 img_msg,
@@ -302,4 +318,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-   
+    
