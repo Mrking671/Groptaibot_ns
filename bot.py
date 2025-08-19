@@ -29,7 +29,7 @@ TMDB_API_KEY       = os.getenv("TMDB_API_KEY")
 MONGO_URI          = os.getenv("MONGO_URI")
 FRONTEND_URL       = "https://frontend-flyvio.vercel.app"
 TUTORIAL_LINK      = "https://t.me/disneysworl_d"  # Replace with your actual tutorial link
-WELCOME_IMAGE_URL  = "https://graph.org/file/2de3c18c07ec3f9ce8c1f.jpg"
+WELCOME_IMAGE_URL  = "https://ar-hosting.pages.dev/1742397369670.jpg"
 ADMIN_USERNAME     = "Lordsakunaa"
 AUTO_DELETE_SECONDS = 100
 DEFAULT_REGION      = "IN"  # Change to your region code
@@ -42,7 +42,7 @@ TARGET_CHAT_IDS = [
 ]
 
 # Add your broadcast channel ID here
-BROADCAST_CHANNEL_ID = -1002765988582  # Replace with your channel's actual ID
+BROADCAST_CHANNEL_ID = -1002097771669  # Replace with your channel's actual ID
 
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
@@ -150,13 +150,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name or "there"
     text = (
         f"{greeting()}, <b>{name}</b>! 🎬\n\n"
-        "I’m your AI Movie Assistant. Send a movie title to get details,\n"
-        "trailers, streaming platforms & download links.\n\n"
+        "ɪ ᴀɴ ᴏғғɪᴄɪᴀʟ ʙᴏᴛ ғᴏʀ ᴍᴏᴠɪ-ʟ ᴡᴇʙsɪᴛᴇ,\n"
+        "ᴛʏᴘᴇ ᴀɴʏ ᴍᴏᴠɪᴇ/sᴇʀɪᴇs ɴᴀᴍᴇ ᴀɴᴅ sᴇᴇ ᴍᴀɢɪᴄ. \n\n"
         f"<i>Made with ❤️ by</i> @{ADMIN_USERNAME}"
     )
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎬 ᴛʀᴇɴᴅɪɴɢ", callback_data="trending")],
-        [InlineKeyboardButton("👤 ʜᴇʟᴘ", url=f"https://redirection2.vercel.app/?url=https://t.me/{ADMIN_USERNAME}")]
+        [InlineKeyboardButton("👤 ʜᴇʟᴘ", url=f"https://t.me/{ADMIN_USERNAME}")]
     ])
     msg = await update.message.reply_photo(
         WELCOME_IMAGE_URL,
@@ -197,7 +197,7 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
                     "🔍 Try Google",
-                    url=f"https://redirection2.vercel.app/?url=https://www.google.com/search?q={query.replace(' ', '+')}"
+                    url=f"https://www.google.com/search?q={query.replace(' ', '+')}"
                 )
             ]])
             msg = await update.message.reply_text(
