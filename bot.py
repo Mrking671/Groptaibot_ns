@@ -1,4 +1,4 @@
-import os
+ import os
 import random
 import requests
 from datetime import datetime
@@ -40,6 +40,9 @@ TARGET_CHAT_IDS = [
     -1001675134770,
     -1001955515603,
 ]
+
+# Add your broadcast channel ID here
+BROADCAST_CHANNEL_ID = -1001234567890  # Replace with your channel's actual ID
 
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
@@ -239,6 +242,67 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
 
+# ──────────────────── ADD MOVIE TO BROADCAST CHANNEL ────────────────────
+async def add_movie_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❗ Please specify a movie name after /add.")
+        return
+
+    query = " ".join(context.args)
+
+    # Try IMDb via OMDb
+    omdb = requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}").json()
+    if omdb.get("Response") == "True":
+        info      = omdb
+        tmdb_id   = None
+        trailer   = None
+        platforms = []
+        poster    = omdb.get("Poster") if omdb.get("Poster") != "N/A" else None
+    else:
+        # Fallback to TMDb
+        search = requests.get(
+            f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
+        ).json().get("results", [])
+        if not search:
+            await update.message.reply_text("❗ Movie not found. Please check the spelling.")
+            return
+
+        tmdb_id   = search[0]["id"]
+        details   = requests.get(
+            f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
+        ).json()
+        trailer   = get_trailer(tmdb_id)
+        platforms = get_platforms(tmdb_id)
+        info      = details
+        poster    = (
+            f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}"
+            if details.get("backdrop_path") else None
+        )
+
+    caption = build_caption(info, platforms)
+    dl_link = get_media_link(info.get("title") or info.get("Title", ""))
+    buttons = build_buttons(trailer, dl_link)
+
+    # Send to broadcast channel (do NOT auto-delete!)
+    if poster:
+        img_msg = crop_16_9(poster)
+        await context.bot.send_photo(
+            BROADCAST_CHANNEL_ID,
+            img_msg,
+            caption=caption,
+            parse_mode=constants.ParseMode.HTML,
+            reply_markup=buttons
+        )
+    else:
+        await context.bot.send_message(
+            BROADCAST_CHANNEL_ID,
+            caption,
+            parse_mode=constants.ParseMode.HTML,
+            reply_markup=buttons
+        )
+
+    await update.message.reply_text(f"✅ Movie broadcasted to the channel.")
+
 # ──────────────────── AUTO-POST JOB ────────────────────
 AUTO_POST_INTERVAL = 600  # 10 minutes in seconds
 
@@ -306,6 +370,9 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, movie_search))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, start))
 
+    # NEW HANDLER for add: broadcast to channel!
+    app.add_handler(CommandHandler("add", add_movie_broadcast))
+
     # Schedule auto-post every 10 minutes, starting after 10 seconds
     app.job_queue.run_repeating(auto_post_job, interval=AUTO_POST_INTERVAL, first=10)
 
@@ -318,4 +385,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+   
