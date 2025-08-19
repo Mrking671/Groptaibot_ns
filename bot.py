@@ -1,4 +1,4 @@
- import os
+import os
 import random
 import requests
 from datetime import datetime
@@ -42,7 +42,7 @@ TARGET_CHAT_IDS = [
 ]
 
 # Add your broadcast channel ID here
-BROADCAST_CHANNEL_ID = -1001234567890  # Replace with your channel's actual ID
+BROADCAST_CHANNEL_ID = -1002765988582  # Replace with your channel's actual ID
 
 # ──────────────────── DATABASE ────────────────────
 client = MongoClient(MONGO_URI)
