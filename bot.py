@@ -385,7 +385,7 @@ def main():
     app.add_handler(CommandHandler("add", add_movie_broadcast))
 
     # Schedule auto-post every 10 minutes, starting after 10 seconds
-    app.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": msg})
+    app.job_queue.run_repeating(auto_post_job, interval=AUTO_POST_INTERVAL, first=10)
 
     app.run_webhook(
         listen="0.0.0.0",
@@ -396,4 +396,3 @@ def main():
 
 if __name__ == "__main__":
     main()
- 
