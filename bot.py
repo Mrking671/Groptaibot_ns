@@ -110,6 +110,18 @@ def crop_16_9(url: str) -> BytesIO | str | None:
         logger.error(f"Image crop failed for URL {url}: {e}")
         return None
 
+def get_image_data(url: str) -> BytesIO | None:
+    """Fetch image data without cropping - for backdrop images"""
+    try:
+        if not url or url in ["N/A", ""]: return None
+        resp = requests.get(url, timeout=10); resp.raise_for_status()
+        img_data = BytesIO(resp.content)
+        img_data.seek(0)
+        return img_data
+    except Exception as e:
+        logger.error(f"Image fetch failed for URL {url}: {e}")
+        return None
+
 async def delete_later(context: ContextTypes.DEFAULT_TYPE):
     msg = context.job.data.get("msg")
     try:
@@ -378,7 +390,7 @@ async def add_movie_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE
                     d_r.raise_for_status()
                     details = d_r.json()
                 except:
-                    details = res
+                    details = res[0]
                 trailer = get_trailer(tmdb_id, result_type)
                 platforms = get_platforms(tmdb_id, result_type)
                 info = details
@@ -421,11 +433,30 @@ async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
         rating = movie.get("rating", "-")
         genre = ", ".join(movie.get("genres", []))
         plot = movie.get("description", "-")
-        poster_url = movie.get("backdrop") or movie.get("poster") or None
 
-        # Optionally enrich with TMDb APIs (can be skipped if not needed)
-        trailer = get_trailer(tmdb_id, media_type) if tmdb_id else None
-        platforms = get_platforms(tmdb_id, media_type) if tmdb_id else []
+        # Use backdrop image URL from document (preferred)
+        img_url = movie.get("backdrop")
+        # If backdrop missing, try poster URL from document
+        if not img_url:
+            img_url = movie.get("poster")
+
+        # If no valid URL in document, fallback to TMDb fetch
+        if not img_url and tmdb_id:
+            try:
+                detail_url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?api_key={TMDB_API_KEY}"
+                resp = requests.get(detail_url, timeout=10)
+                resp.raise_for_status()
+                details = resp.json()
+                backdrop_path = details.get("backdrop_path")
+                if backdrop_path:
+                    img_url = f"https://image.tmdb.org/t/p/original{backdrop_path}"
+                else:
+                    poster_path = details.get("poster_path")
+                    if poster_path:
+                        img_url = f"https://image.tmdb.org/t/p/original{poster_path}"
+            except Exception as e:
+                logger.error(f"Failed fetching TMDb image fallback for {tmdb_id}: {e}")
+
         caption = (
             f"🎬 <b><u>{title.upper()}</u></b>\n"
             f"┏━━━━━━━━━━━━━━━━━━\n"
@@ -435,22 +466,41 @@ async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
             f"┗━━━━━━━━━━━━━━━━━━\n\n"
             f"<b>📝 Plot:</b>\n<em>{plot}</em>\n"
         )
+
+        trailer = get_trailer(tmdb_id, media_type) if tmdb_id else None
+        platforms = get_platforms(tmdb_id, media_type) if tmdb_id else []
         if platforms:
             caption += f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
 
         dl_link = f"{FRONTEND_URL}/{'mov' if media_type=='movie' else 'ser'}/{tmdb_id}"
         buttons = build_buttons(trailer, dl_link)
-        img = crop_16_9(poster_url)
+
+        # Get image data without cropping (backdrop is already good)
+        img_data = get_image_data(img_url)
+
         for cid in TARGET_CHAT_IDS:
             try:
-                if img:
-                    await context.bot.send_photo(cid, img, caption=caption, parse_mode=constants.ParseMode.HTML, reply_markup=buttons)
+                if img_data:
+                    await context.bot.send_photo(
+                        cid,
+                        photo=img_data,
+                        caption=caption,
+                        parse_mode=constants.ParseMode.HTML,
+                        reply_markup=buttons
+                    )
                 else:
-                    await context.bot.send_message(cid, caption, parse_mode=constants.ParseMode.HTML, reply_markup=buttons)
-                context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg":None})
+                    # Fallback to text message if no image
+                    await context.bot.send_message(
+                        cid,
+                        text=caption,
+                        parse_mode=constants.ParseMode.HTML,
+                        reply_markup=buttons
+                    )
+                context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg": None})
             except Exception as e:
                 logger.error(f"Auto-post to {cid} failed: {e}")
-        logger.info("Auto-hero-post completed.")
+
+        logger.info(f"Auto-hero-post completed for: {title}")
     except Exception as e:
         logger.error(f"Error in auto_post_job: {e}")
 
