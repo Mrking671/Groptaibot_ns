@@ -52,10 +52,11 @@ BROADCAST_CHANNEL_ID = -1002097771669
 
 # ──────────────────── DATABASE ────────────────────
 try:
-    client    = MongoClient(MONGO_URI)
-    db        = client.get_default_database()
-    movies    = db["movie"]
-    tvshows   = db["tv"]
+    client       = MongoClient(MONGO_URI)
+    db           = client.get_default_database()
+    movies       = db["movie"]
+    tvshows      = db["tv"]
+    herosection  = db["herosection"]   # NEW collection for auto-post
     logger.info("Database connection established successfully")
 except Exception as e:
     logger.error(f"Failed to connect to database: {e}")
@@ -71,22 +72,28 @@ def greeting() -> str:
     if 18 <= h < 22: return "Good evening"
     return "Good night"
 
-def get_trailer(tmdb_id: int) -> str | None:
+def get_trailer(tmdb_id: int, media_type: str = "movie") -> str | None:
     try:
         if not tmdb_id: return None
-        url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
+        if media_type == "movie":
+            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
+        else:  # TV
+            url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         for v in resp.json().get("results", []):
-            if v["site"].lower()=="youtube" and v["type"].lower()=="trailer":
+            if v["site"].lower() == "youtube" and v["type"].lower() == "trailer":
                 return f"https://www.youtube.com/watch?v={v['key']}"
     except Exception as e:
         logger.error(f"Error fetching trailer for TMDB ID {tmdb_id}: {e}")
     return None
 
-def get_platforms(tmdb_id: int) -> list[str]:
+def get_platforms(tmdb_id: int, media_type: str = "movie") -> list[str]:
     try:
         if not tmdb_id: return []
-        url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
+        if media_type == "movie":
+            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
+        else:
+            url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         data = resp.json().get("results", {}).get(DEFAULT_REGION, {})
         return [p["provider_name"] for p in data.get("flatrate", [])]
@@ -99,11 +106,11 @@ def crop_16_9(url: str) -> BytesIO | str:
         if not url: return url
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         img = Image.open(BytesIO(resp.content))
-        w,h = img.size; nh=int(w*9/16)
-        if h>nh:
-            top=(h-nh)//2
-            img=img.crop((0,top,w,top+nh))
-        buf=BytesIO(); img.save(buf,"PNG"); buf.seek(0)
+        w,h = img.size; nh = int(w * 9 / 16)
+        if h > nh:
+            top = (h-nh)//2
+            img  = img.crop((0,top,w,top+nh))
+        buf = BytesIO(); img.save(buf,"PNG"); buf.seek(0)
         return buf
     except Exception as e:
         logger.error(f"Image crop failed for URL {url}: {e}")
@@ -118,10 +125,10 @@ async def delete_later(context: ContextTypes.DEFAULT_TYPE):
 
 def build_caption(info: dict, platforms: list[str]) -> str:
     try:
-        title  = info.get("Title") or info.get("title","-")
-        year   = str(info.get("Year") or info.get("release_date","-"))[:4]
-        rating = info.get("imdbRating") or info.get("vote_average","-")
-        genre  = "-"
+        title    = info.get("Title") or info.get("title","-")
+        year     = str(info.get("Year") or info.get("release_date") or info.get("release_year","-"))[:4]
+        rating   = info.get("imdbRating") or info.get("vote_average") or info.get("rating","-")
+        genre    = "-"
         if info.get("Genre"):
             genre = info["Genre"]
         elif isinstance(info.get("genres"), list):
@@ -130,9 +137,11 @@ def build_caption(info: dict, platforms: list[str]) -> str:
                 genre = ", ".join(x["name"] for x in g)
             elif all(isinstance(x,str) for x in g):
                 genre = ", ".join(g)
-        director = info.get("Director") or "-"
-        plot     = info.get("Plot") or info.get("overview","-")
-        cast     = info.get("Actors") or "-"
+        elif info.get("genre"):
+            genre = info["genre"]
+        director = info.get("Director") or info.get("director") or "-"
+        plot     = info.get("Plot") or info.get("overview") or info.get("description","-")
+        cast     = info.get("Actors") or info.get("cast") or "-"
 
         cap = (
             f"🎬 <b><u>{title.upper()}</u></b>\n"
@@ -144,8 +153,8 @@ def build_caption(info: dict, platforms: list[str]) -> str:
             f"┗━━━━━━━━━━━━━━━━━━\n\n"
             f"<b>📝 Plot:</b>\n<em>{plot}</em>\n"
         )
-        if cast!="-": cap+=f"\n<b>🎞️ Cast:</b> {cast}\n"
-        if platforms: cap+=f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
+        if cast != "-": cap += f"\n<b>🎞️ Cast:</b> {cast}\n"
+        if platforms: cap += f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
         return cap
     except Exception as e:
         logger.error(f"Error building caption: {e}")
@@ -154,24 +163,26 @@ def build_caption(info: dict, platforms: list[str]) -> str:
 def get_media_link(title: str) -> str:
     try:
         if not title: return FRONTEND_URL
-        doc = movies.find_one({"title": {"$regex": f"^{title}$","$options":"i"}})
-        if doc and doc.get("tmdb_id"): return f"{FRONTEND_URL}/mov/{doc['tmdb_id']}"
-        doc = tvshows.find_one({"title": {"$regex": f"^{title}$","$options":"i"}})
-        if doc and doc.get("tmdb_id"): return f"{FRONTEND_URL}/ser/{doc['tmdb_id']}"
+        doc = movies.find_one({"title": {"$regex": f"^{title}$", "$options":"i"}})
+        if doc and doc.get("tmdb_id"):
+            return f"{FRONTEND_URL}/mov/{doc['tmdb_id']}"
+        doc = tvshows.find_one({"title": {"$regex": f"^{title}$", "$options":"i"}})
+        if doc and doc.get("tmdb_id"):
+            return f"{FRONTEND_URL}/ser/{doc['tmdb_id']}"
     except Exception as e:
         logger.error(f"Error getting media link: {e}")
     return FRONTEND_URL
 
 def build_buttons(trailer: str | None, dl_link: str) -> InlineKeyboardMarkup:
     try:
-        redirect=lambda u: f"https://redirection2.vercel.app/?url={u}"
-        rows=[]
-        if trailer: rows.append([InlineKeyboardButton("▶️ Watch Trailer",url=redirect(trailer))])
+        redirect = lambda u: f"https://redirection2.vercel.app/?url={u}"
+        rows = []
+        if trailer: rows.append([InlineKeyboardButton("▶️ Watch Trailer", url=redirect(trailer))])
         rows.append([
-            InlineKeyboardButton("📥 720p HD",url=redirect(dl_link)),
-            InlineKeyboardButton("📥 1080p HD",url=redirect(dl_link)),
+            InlineKeyboardButton("📥 720p HD", url=redirect(dl_link)),
+            InlineKeyboardButton("📥 1080p HD", url=redirect(dl_link)),
         ])
-        rows.append([InlineKeyboardButton("📚 Tutorial",url=TUTORIAL_LINK)])
+        rows.append([InlineKeyboardButton("📚 Tutorial", url=TUTORIAL_LINK)])
         return InlineKeyboardMarkup(rows)
     except Exception as e:
         logger.error(f"Error building buttons: {e}")
@@ -214,9 +225,9 @@ async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ); resp.raise_for_status()
         items = resp.json().get("results",[])[:5]
         text="<b>🔥 Trending Movies:</b>\n\n"
-        for i,m in enumerate(items,1):
-            text+=f"<b>{i}.</b> {m['title']} ({m.get('release_date','')[:4]})\n"
-        msg=await update.callback_query.message.reply_text(text,parse_mode=constants.ParseMode.HTML)
+        for i, m in enumerate(items, 1):
+            text += f"<b>{i}.</b> {m['title']} ({m.get('release_date','')[:4]})\n"
+        msg = await update.callback_query.message.reply_text(text,parse_mode=constants.ParseMode.HTML)
         context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg":msg})
         logger.info("Displayed trending movies")
     except Exception as e:
@@ -225,50 +236,86 @@ async def trending_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not update.message or not update.message.text: return
-        query=update.message.text.strip()
+        query = update.message.text.strip()
         if not query: return
         logger.info(f"Search query: {query}")
-        # OMDb
-        try:
-            omdb_resp=requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}",timeout=10)
-            omdb_resp.raise_for_status()
-            omdb=omdb_resp.json()
-        except:
-            omdb={"Response":"False"}
-        if omdb.get("Response")=="True":
-            info=omdb; tmdb_id=None; trailer=None; platforms=[]; poster=omdb.get("Poster") if omdb.get("Poster")!="N/A" else None
+
+        # First, try finding in local DB: movies, then tvshows
+        doc = movies.find_one({"title": {"$regex": f"^{query}$", "$options":"i"}})
+        result_type = "movie"
+        if not doc:
+            doc = tvshows.find_one({"title": {"$regex": f"^{query}$", "$options":"i"}})
+            result_type = "tv" if doc else "movie"
+
+        info = None; tmdb_id = None; trailer = None; platforms = []; poster = None
+
+        if doc:  # Found locally
+            info = doc
+            tmdb_id = doc.get("tmdb_id")
+            media_type = "movie" if result_type == "movie" else "tv"
+            trailer = get_trailer(tmdb_id, media_type)
+            platforms = get_platforms(tmdb_id, media_type)
+            poster = doc.get("backdrop") or doc.get("poster")
         else:
-            # TMDb fallback
+            # OMDb search as before
             try:
-                tmdb_s=requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}",timeout=10)
-                tmdb_s.raise_for_status()
-                results=tmdb_s.json().get("results",[])
+                omdb_resp = requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}",timeout=10)
+                omdb_resp.raise_for_status()
+                omdb = omdb_resp.json()
             except:
-                results=[]
-            if not results:
-                btn=InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Try Google",url=f"https://www.google.com/search?q={query.replace(' ','+')}")]])
-                msg=await update.message.reply_text("❗ Movie not found.",parse_mode=constants.ParseMode.HTML,reply_markup=btn)
-                context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS, data={"msg":msg})
-                return
-            tmdb_id=results[0]["id"]
-            try:
-                det_r=requests.get(f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits",timeout=10)
-                det_r.raise_for_status()
-                details=det_r.json()
-            except:
-                details=results[0]
-            trailer=get_trailer(tmdb_id)
-            platforms=get_platforms(tmdb_id)
-            info=details
-            poster=(f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None)
-        caption=build_caption(info,platforms)
-        dl_link=get_media_link(info.get("title") or info.get("Title",""))
-        buttons=build_buttons(trailer,dl_link)
+                omdb = {"Response":"False"}
+            if omdb.get("Response") == "True":
+                info=omdb; tmdb_id = None; trailer = None; platforms = []
+                poster = omdb.get("Poster") if omdb.get("Poster")!="N/A" else None
+            else:
+                # TMDb fallback – Search Show first, then Movie
+                tmdb_searches = [
+                    ("movie", f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"),
+                    ("tv", f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={query}")
+                ]
+                results = []
+                result_type = "movie"
+                for rtype, url in tmdb_searches:
+                    try:
+                        tmdb_s = requests.get(url,timeout=10)
+                        tmdb_s.raise_for_status()
+                        res = tmdb_s.json().get("results", [])
+                        if res:
+                            results = res
+                            result_type = rtype
+                            break
+                    except:
+                        continue
+                if not results:
+                    btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔍 Try Google",url=f"https://www.google.com/search?q={query.replace(' ','+')}")]])
+                    msg = await update.message.reply_text("❗ Movie/Series not found.",parse_mode=constants.ParseMode.HTML,reply_markup=btn)
+                    context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS, data={"msg":msg})
+                    return
+                tmdb_id = results[0]["id"]
+                # Get details
+                detail_url = f"https://api.themoviedb.org/3/{result_type}/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
+                try:
+                    det_r = requests.get(detail_url,timeout=10)
+                    det_r.raise_for_status()
+                    details = det_r.json()
+                except:
+                    details = results[0]
+                trailer = get_trailer(tmdb_id, result_type)
+                platforms = get_platforms(tmdb_id, result_type)
+                info = details
+                poster = (f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None)
+        caption = build_caption(info, platforms)
+        # Get proper link
+        media_link = get_media_link(info.get("title") or info.get("Title",""))
+        # If not found in local DB, fallback to TMDB search type for media-type link
+        if media_link == FRONTEND_URL and tmdb_id:
+            media_link = f"{FRONTEND_URL}/{'mov' if result_type=='movie' else 'ser'}/{tmdb_id}"
+        buttons = build_buttons(trailer, media_link)
         if poster:
-            img=crop_16_9(poster)
-            msg=await update.message.reply_photo(img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
+            img = crop_16_9(poster)
+            msg = await update.message.reply_photo(img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
         else:
-            msg=await update.message.reply_text(caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
+            msg = await update.message.reply_text(caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
         context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS,data={"msg":msg})
         logger.info(f"Completed search for {query}")
     except Exception as e:
@@ -282,45 +329,77 @@ async def add_movie_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         if not update.message: return
         if not context.args:
-            await update.message.reply_text("❗ Specify a movie name after /add.")
+            await update.message.reply_text("❗ Specify a movie/series name after /add.")
             return
-        query=" ".join(context.args)
+        query = " ".join(context.args)
         logger.info(f"Broadcasting: {query}")
-        # OMDb
-        try:
-            omdb_r=requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}",timeout=10)
-            omdb_r.raise_for_status()
-            omdb=omdb_r.json()
-        except:
-            omdb={"Response":"False"}
-        if omdb.get("Response")=="True":
-            info=omdb; tmdb_id=None; trailer=None; platforms=[]; poster=omdb.get("Poster") if omdb.get("Poster")!="N/A" else None
+
+        # Try DB first
+        doc = movies.find_one({"title": {"$regex": f"^{query}$", "$options":"i"}})
+        result_type = "movie"
+        if not doc:
+            doc = tvshows.find_one({"title": {"$regex": f"^{query}$", "$options":"i"}})
+            result_type = "tv" if doc else "movie"
+        info = None; tmdb_id=None; trailer=None; platforms=[]; poster=None
+
+        if doc:
+            info = doc
+            tmdb_id = doc.get("tmdb_id")
+            media_type = "movie" if result_type == "movie" else "tv"
+            trailer = get_trailer(tmdb_id, media_type)
+            platforms = get_platforms(tmdb_id, media_type)
+            poster = doc.get("backdrop") or doc.get("poster")
         else:
             try:
-                s_r=requests.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}",timeout=10)
-                s_r.raise_for_status()
-                res=s_r.json().get("results",[])
+                omdb_r = requests.get(f"http://www.omdbapi.com/?t={query}&apikey={IMDB_API_KEY}",timeout=10)
+                omdb_r.raise_for_status()
+                omdb = omdb_r.json()
             except:
-                res=[]
-            if not res:
-                await update.message.reply_text("❗ Movie not found.")
-                return
-            tmdb_id=res[0]["id"]
-            try:
-                d_r=requests.get(f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits",timeout=10)
-                d_r.raise_for_status()
-                details=d_r.json()
-            except:
-                details=res[0]
-            trailer=get_trailer(tmdb_id)
-            platforms=get_platforms(tmdb_id)
-            info=details
-            poster=(f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None)
-        caption=build_caption(info,platforms)
-        dl_link=get_media_link(info.get("title") or info.get("Title",""))
-        buttons=build_buttons(trailer,dl_link)
+                omdb = {"Response":"False"}
+            if omdb.get("Response") == "True":
+                info = omdb; tmdb_id = None; trailer = None; platforms = []
+                poster = omdb.get("Poster") if omdb.get("Poster")!="N/A" else None
+            else:
+                tmdb_searches = [
+                    ("movie", f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"),
+                    ("tv", f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={query}")
+                ]
+                res = []; result_type="movie"
+                for rtype, url in tmdb_searches:
+                    try:
+                        s_r = requests.get(url,timeout=10)
+                        s_r.raise_for_status()
+                        rx = s_r.json().get("results", [])
+                        if rx:
+                            res = rx
+                            result_type = rtype
+                            break
+                    except:
+                        continue
+                if not res:
+                    await update.message.reply_text("❗ Movie/Series not found.")
+                    return
+                tmdb_id = res[0]["id"]
+                detail_url = f"https://api.themoviedb.org/3/{result_type}/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=credits"
+                try:
+                    d_r = requests.get(detail_url,timeout=10)
+                    d_r.raise_for_status()
+                    details = d_r.json()
+                except:
+                    details = res
+                trailer = get_trailer(tmdb_id, result_type)
+                platforms = get_platforms(tmdb_id, result_type)
+                info = details
+                poster = (f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None)
+        caption = build_caption(info,platforms)
+        # Get proper link for broadcast
+        media_link = get_media_link(info.get("title") or info.get("Title",""))
+        # If not found local
+        if media_link == FRONTEND_URL and tmdb_id:
+            media_link = f"{FRONTEND_URL}/{'mov' if result_type=='movie' else 'ser'}/{tmdb_id}"
+        buttons = build_buttons(trailer,media_link)
         if poster:
-            img=crop_16_9(poster)
+            img = crop_16_9(poster)
             await context.bot.send_photo(BROADCAST_CHANNEL_ID,img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
         else:
             await context.bot.send_message(BROADCAST_CHANNEL_ID,caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
@@ -335,43 +414,50 @@ AUTO_POST_INTERVAL = 600
 
 async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
     try:
-        global posted_movie_ids
-        logger.info("Running auto-post job")
-        count = movies.count_documents({})
-        if count==0:
-            logger.warning("No movies to auto-post")
+        hero_count = herosection.count_documents({})
+        if hero_count == 0:
+            logger.warning("No hero movies to auto-post")
             return
-        fq={"_id":{"$nin":list(posted_movie_ids)}} if posted_movie_ids else {}
-        pipeline=[{"$match":fq},{"$sample":{"size":1}}]
-        ml=list(movies.aggregate(pipeline))
-        if not ml:
-            posted_movie_ids.clear()
-            ml=list(movies.aggregate([{"$sample":{"size":1}}]))
-        if not ml:
-            logger.warning("No movies after reset")
-            return
-        movie=ml[0]; posted_movie_ids.add(movie["_id"])
-        tmdb_id=movie.get("tmdb_id")
-        trailer=get_trailer(tmdb_id) if tmdb_id else None
-        platforms=get_platforms(tmdb_id) if tmdb_id else []
-        caption=build_caption(movie,platforms)
-        dl_link=get_media_link(movie.get("title",""))
-        buttons=build_buttons(trailer,dl_link)
-        poster_url=(f"https://image.tmdb.org/t/p/w780{movie.get('backdrop_path')}" if movie.get("backdrop_path") else None)
-        success=0
+
+        pipeline = [{"$sample": {"size": 1}}]
+        ml = list(herosection.aggregate(pipeline))
+        if not ml: return
+
+        movie = ml[0]
+
+        title = movie.get("title","-")
+        tmdb_id = movie.get("tmdb_id")
+        media_type = movie.get("media_type","movie")
+        year = movie.get("release_year","-")
+        rating = movie.get("rating","-")
+        genre = ", ".join(movie.get("genres",[]))
+        plot = movie.get("description","-")
+        poster_url = movie.get("backdrop") or movie.get("poster")
+
+        trailer = get_trailer(tmdb_id, "movie" if media_type=="movie" else "tv") if tmdb_id else None
+        platforms = get_platforms(tmdb_id, "movie" if media_type=="movie" else "tv") if tmdb_id else []
+        caption = (
+            f"🎬 <b><u>{title.upper()}</u></b>\n"
+            f"┏━━━━━━━━━━━━━━━━━━\n"
+            f"┃ <b>Year:</b> {year}\n"
+            f"┃ <b>IMDb:</b> ⭐ {rating}\n"
+            f"┃ <b>Genre:</b> {genre}\n"
+            f"┗━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>📝 Plot:</b>\n<em>{plot}</em>\n"
+        )
+        if platforms:
+            caption += f"\n<b>📺 Streaming on:</b> {', '.join(platforms)}"
+
+        dl_link = f"{FRONTEND_URL}/{'mov' if media_type=='movie' else 'ser'}/{tmdb_id}"
+        buttons = build_buttons(trailer, dl_link)
+        img = crop_16_9(poster_url)
         for cid in TARGET_CHAT_IDS:
             try:
-                if poster_url:
-                    img=crop_16_9(poster_url)
-                    msg=await context.bot.send_photo(cid,img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
-                else:
-                    msg=await context.bot.send_message(cid,caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
-                context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS,data={"msg":msg})
-                success+=1
-                logger.info(f"Auto-posted to {cid}")
+                await context.bot.send_photo(cid,img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
+                context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS,data={"msg":None})
             except Exception as e:
                 logger.error(f"Auto-post to {cid} failed: {e}")
-        logger.info(f"Auto-post completed: {success}/{len(TARGET_CHAT_IDS)}")
+        logger.info("Auto-hero-post completed.")
     except Exception as e:
         logger.error(f"Error in auto_post_job: {e}")
 
