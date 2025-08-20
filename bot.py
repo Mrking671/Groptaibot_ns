@@ -75,10 +75,7 @@ def greeting() -> str:
 def get_trailer(tmdb_id: int, media_type: str = "movie") -> str | None:
     try:
         if not tmdb_id: return None
-        if media_type == "movie":
-            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
-        else:  # TV
-            url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
+        url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/videos?api_key={TMDB_API_KEY}"
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         for v in resp.json().get("results", []):
             if v["site"].lower() == "youtube" and v["type"].lower() == "trailer":
@@ -90,10 +87,7 @@ def get_trailer(tmdb_id: int, media_type: str = "movie") -> str | None:
 def get_platforms(tmdb_id: int, media_type: str = "movie") -> list[str]:
     try:
         if not tmdb_id: return []
-        if media_type == "movie":
-            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
-        else:
-            url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
+        url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/watch/providers?api_key={TMDB_API_KEY}"
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         data = resp.json().get("results", {}).get(DEFAULT_REGION, {})
         return [p["provider_name"] for p in data.get("flatrate", [])]
@@ -101,12 +95,12 @@ def get_platforms(tmdb_id: int, media_type: str = "movie") -> list[str]:
         logger.error(f"Error fetching platforms for TMDB ID {tmdb_id}: {e}")
     return []
 
-def crop_16_9(url: str) -> BytesIO | str:
+def crop_16_9(url: str) -> BytesIO | str | None:
     try:
-        if not url: return url
+        if not url or url in ["N/A", ""]: return None
         resp = requests.get(url, timeout=10); resp.raise_for_status()
         img = Image.open(BytesIO(resp.content))
-        w,h = img.size; nh = int(w * 9 / 16)
+        w, h = img.size; nh = int(w * 9 / 16)
         if h > nh:
             top = (h-nh)//2
             img  = img.crop((0,top,w,top+nh))
@@ -114,7 +108,7 @@ def crop_16_9(url: str) -> BytesIO | str:
         return buf
     except Exception as e:
         logger.error(f"Image crop failed for URL {url}: {e}")
-        return url
+        return None
 
 async def delete_later(context: ContextTypes.DEFAULT_TYPE):
     msg = context.job.data.get("msg")
@@ -307,12 +301,11 @@ async def movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = build_caption(info, platforms)
         # Get proper link
         media_link = get_media_link(info.get("title") or info.get("Title",""))
-        # If not found in local DB, fallback to TMDB search type for media-type link
         if media_link == FRONTEND_URL and tmdb_id:
             media_link = f"{FRONTEND_URL}/{'mov' if result_type=='movie' else 'ser'}/{tmdb_id}"
         buttons = build_buttons(trailer, media_link)
-        if poster:
-            img = crop_16_9(poster)
+        img = crop_16_9(poster)
+        if img:
             msg = await update.message.reply_photo(img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
         else:
             msg = await update.message.reply_text(caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
@@ -334,7 +327,6 @@ async def add_movie_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE
         query = " ".join(context.args)
         logger.info(f"Broadcasting: {query}")
 
-        # Try DB first
         doc = movies.find_one({"title": {"$regex": f"^{query}$", "$options":"i"}})
         result_type = "movie"
         if not doc:
@@ -392,14 +384,12 @@ async def add_movie_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE
                 info = details
                 poster = (f"https://image.tmdb.org/t/p/w780{details.get('backdrop_path')}" if details.get("backdrop_path") else None)
         caption = build_caption(info,platforms)
-        # Get proper link for broadcast
         media_link = get_media_link(info.get("title") or info.get("Title",""))
-        # If not found local
         if media_link == FRONTEND_URL and tmdb_id:
             media_link = f"{FRONTEND_URL}/{'mov' if result_type=='movie' else 'ser'}/{tmdb_id}"
         buttons = build_buttons(trailer,media_link)
-        if poster:
-            img = crop_16_9(poster)
+        img = crop_16_9(poster)
+        if img:
             await context.bot.send_photo(BROADCAST_CHANNEL_ID,img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
         else:
             await context.bot.send_message(BROADCAST_CHANNEL_ID,caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
@@ -420,22 +410,22 @@ async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
             return
 
         pipeline = [{"$sample": {"size": 1}}]
-        ml = list(herosection.aggregate(pipeline))
-        if not ml: return
+        docs = list(herosection.aggregate(pipeline))
+        if not docs: return
 
-        movie = ml[0]
-
-        title = movie.get("title","-")
+        movie = docs[0]
+        title = movie.get("title", "-")
         tmdb_id = movie.get("tmdb_id")
-        media_type = movie.get("media_type","movie")
-        year = movie.get("release_year","-")
-        rating = movie.get("rating","-")
-        genre = ", ".join(movie.get("genres",[]))
-        plot = movie.get("description","-")
-        poster_url = movie.get("backdrop") or movie.get("poster")
+        media_type = movie.get("media_type", "movie")
+        year = movie.get("release_year", "-")
+        rating = movie.get("rating", "-")
+        genre = ", ".join(movie.get("genres", []))
+        plot = movie.get("description", "-")
+        poster_url = movie.get("backdrop") or movie.get("poster") or None
 
-        trailer = get_trailer(tmdb_id, "movie" if media_type=="movie" else "tv") if tmdb_id else None
-        platforms = get_platforms(tmdb_id, "movie" if media_type=="movie" else "tv") if tmdb_id else []
+        # Optionally enrich with TMDb APIs (can be skipped if not needed)
+        trailer = get_trailer(tmdb_id, media_type) if tmdb_id else None
+        platforms = get_platforms(tmdb_id, media_type) if tmdb_id else []
         caption = (
             f"🎬 <b><u>{title.upper()}</u></b>\n"
             f"┏━━━━━━━━━━━━━━━━━━\n"
@@ -453,8 +443,11 @@ async def auto_post_job(context: ContextTypes.DEFAULT_TYPE):
         img = crop_16_9(poster_url)
         for cid in TARGET_CHAT_IDS:
             try:
-                await context.bot.send_photo(cid,img,caption=caption,parse_mode=constants.ParseMode.HTML,reply_markup=buttons)
-                context.job_queue.run_once(delete_later,AUTO_DELETE_SECONDS,data={"msg":None})
+                if img:
+                    await context.bot.send_photo(cid, img, caption=caption, parse_mode=constants.ParseMode.HTML, reply_markup=buttons)
+                else:
+                    await context.bot.send_message(cid, caption, parse_mode=constants.ParseMode.HTML, reply_markup=buttons)
+                context.job_queue.run_once(delete_later, AUTO_DELETE_SECONDS, data={"msg":None})
             except Exception as e:
                 logger.error(f"Auto-post to {cid} failed: {e}")
         logger.info("Auto-hero-post completed.")
